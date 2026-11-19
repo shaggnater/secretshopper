@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecretShopper</title>
+<meta name="theme-color" content="#120d1c">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='8' y='24' width='48' height='34' rx='4' fill='%237c3aed'/><rect x='4' y='16' width='56' height='12' rx='3' fill='%23a855f7'/><rect x='28' y='16' width='8' height='42' fill='%23f97316'/><path d='M32 16c-6-10-18-8-14 0zM32 16c6-10 18-8 14 0z' fill='%23f97316'/></svg>">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ============ CONFIG lives in the <script> below ============ */
+  :root{
+    --bg:#0f0b17; --bg2:#171122; --card:#1d1629; --card2:#251c35; --line:#33284a;
+    --nav:#120d1c; --sub:#2a1747; --sub2:#3b1f66;
+    --purple:#8b5cf6; --purple2:#a78bfa; --purpleDeep:#6d28d9;
+    --orange:#f97316; --orange2:#fb923c; --amber:#fbbf24;
+    --green:#22c55e; --red:#ef4444;
+    --text:#ede9f6; --muted:#a59cba; --dim:#7a7090;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 "Amazon Ember",Arial,"Segoe UI",system-ui,sans-serif}
+  a{color:var(--purple2);text-decoration:none} a:hover{color:var(--orange2);text-decoration:underline}
+  button,input,select,textarea{font:inherit;color:inherit}
+  .hidden{display:none!important}
+
+  /* ---------- buttons & inputs ---------- */
+  .btn{border:1px solid transparent;border-radius:999px;padding:7px 16px;cursor:pointer;font-weight:600;font-size:13.5px;white-space:nowrap;transition:filter .15s,background .15s}
+  .btn:hover{filter:brightness(1.1)} .btn:disabled{opacity:.5;cursor:default;filter:none}
+  .btn-orange{background:linear-gradient(#fb923c,#f97316);color:#1a0f05;border-color:#ea6a0c}
+  .btn-amber{background:linear-gradient(#fcd34d,#fbbf24);color:#1a1205;border-color:#e0a512}
+  .btn-purple{background:linear-gradient(#9b6dff,#7c3aed);color:#fff;border-color:#6d28d9}
+  .btn-ghost{background:var(--card2);border-color:var(--line);color:var(--text)}
+  .btn-ghost:hover{background:#2f2443}
+  .btn-danger{background:transparent;border-color:#7f1d1d;color:#fca5a5}
+  .btn-sm{padding:4px 12px;font-size:12.5px}
+  .btn-block{width:100%}
+  .link-btn{background:none;border:0;color:var(--purple2);cursor:pointer;padding:0;font-size:13px}
+  .link-btn:hover{color:var(--orange2);text-decoration:underline}
+  input[type=text],input[type=email],input[type=password],input[type=url],input[type=number],select,textarea{
+    width:100%;background:#0d0914;border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.2)}
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin:10px 0 4px}
+  textarea{resize:vertical;min-height:60px}
+
+  /* ---------- top nav (Amazon-style) ---------- */
+  .nav{background:var(--nav);display:flex;align-items:center;gap:14px;padding:8px 16px;position:sticky;top:0;z-index:20;border-bottom:1px solid #000}
+  .logo{display:flex;align-items:center;gap:7px;font-weight:800;font-size:21px;letter-spacing:-.5px;padding:4px 6px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap}
+  .logo:hover{border-color:#fff3}
+  .logo .s1{color:#fff} .logo .s2{color:var(--orange)}
+  .logo svg{width:28px;height:28px}
+  .nav-block{padding:4px 8px;border:1px solid transparent;border-radius:4px;cursor:pointer;line-height:1.15;white-space:nowrap}
+  .nav-block:hover{border-color:#fff3}
+  .nav-block small{display:block;color:var(--muted);font-size:11.5px}
+  .nav-block b{font-size:14px}
+  .nav-block select{background:transparent;border:0;padding:0;font-weight:700;font-size:14px;width:auto;cursor:pointer}
+  .nav-block select:focus{box-shadow:none}
+  .nav-block select option{background:var(--card)}
+  .search{flex:1;display:flex;min-width:120px;max-width:720px;border-radius:8px;overflow:hidden;border:2px solid transparent}
+  .search:focus-within{border-color:var(--orange)}
+  .search input{border:0;border-radius:0;background:#f5f3fa;color:#111;padding:9px 12px}
+  .search input:focus{box-shadow:none}
+  .search button{background:var(--orange);border:0;width:48px;cursor:pointer;display:grid;place-items:center}
+  .search button svg{width:20px;height:20px}
+  .nav-right{display:flex;gap:4px;margin-left:auto;align-items:center}
+  .cart{display:flex;align-items:flex-end;gap:4px;font-weight:700}
+  .cart .count{color:var(--orange);font-size:16px;font-weight:800;position:relative;top:-14px;left:22px;margin-left:-14px}
+  .cart svg{width:36px;height:30px}
+
+  /* ---------- purple sub-nav ---------- */
+  .subnav{background:linear-gradient(90deg,var(--sub),var(--sub2));display:flex;align-items:center;gap:2px;padding:4px 12px;overflow-x:auto;scrollbar-width:none}
+  .subnav::-webkit-scrollbar{display:none}
+  .tab{background:none;border:1px solid transparent;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:14px;white-space:nowrap;color:#f1eaff}
+  .tab:hover{border-color:#fff4}
+  .tab.active{border-color:var(--orange);color:#fff;font-weight:700}
+  .tab.invite{margin-left:auto;color:var(--amber);font-weight:700}
+
+  /* ---------- page layout ---------- */
+  .wrap{max-width:1280px;margin:0 auto;padding:18px 16px 60px;display:grid;grid-template-columns:270px 1fr;gap:22px}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr}.side{order:2}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
+  .side .panel{padding:14px}
+  .side h3{margin:0 0 10px;font-size:16px}
+  .side-list{display:flex;flex-direction:column;gap:4px}
+  .side-item{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .side-item:hover{background:var(--card2)}
+  .side-item.active{background:var(--card2);border-color:var(--purple)}
+  .side-item .meta{flex:1;min-width:0}
+  .side-item .meta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .side-item .meta small{color:var(--muted);font-size:12px}
+  .bar{height:5px;background:#0d0914;border-radius:99px;margin-top:5px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),var(--orange));border-radius:99px}
+  .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;flex:none}
+  .tip{margin-top:14px;font-size:12.5px;color:var(--muted);background:#140f1e;border:1px dashed var(--line);border-radius:8px;padding:10px}
+  .tip b{color:var(--orange2)}
+
+  .list-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:18px 20px;border-bottom:1px solid var(--line)}
+  .list-head h1{margin:0;font-size:24px;font-weight:700}
+  .list-head p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  .secret-banner{display:inline-flex;align-items:center;gap:6px;background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.45);color:#d8c9ff;padding:4px 10px;border-radius:99px;font-size:12.5px;margin-top:8px}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg2)}
+  .pill{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:13px;cursor:pointer}
+  .pill.on{background:var(--orange);color:#1a0f05;border-color:var(--orange);font-weight:700}
+  .toolbar select{width:auto;padding:5px 10px;font-size:13px;margin-left:auto}
+
+  /* ---------- add item form ---------- */
+  .addbox{padding:16px 20px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1f1530,transparent)}
+  .addgrid{display:grid;grid-template-columns:2fr 2fr 1fr .7fr;gap:0 12px}
+  .addgrid .full{grid-column:1/-1}
+  .addgrid .half{grid-column:span 2}
+  @media(max-width:700px){.addgrid{grid-template-columns:1fr 1fr}.addgrid .half{grid-column:1/-1}}
+  .check{display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;color:var(--text);font-size:13.5px}
+  .check input{accent-color:var(--orange);width:16px;height:16px}
+
+  /* ---------- item rows ---------- */
+  .row{display:grid;grid-template-columns:150px 1fr 230px;gap:18px;padding:18px 20px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  @media(max-width:700px){.row{grid-template-columns:90px 1fr}.row .act{grid-column:1/-1}}
+  .thumb{width:100%;aspect-ratio:1;border-radius:8px;background:#fff;display:grid;place-items:center;overflow:hidden}
+  .thumb img{width:100%;height:100%;object-fit:contain}
+  .thumb.ph{background:linear-gradient(135deg,#2c1f45,#1a1228);color:var(--purple2)}
+  .thumb.ph img{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 2px 4px #0008)}
+  .thumb.ph span{font-size:38px;font-weight:800}
+  .info h2{margin:0;font-size:17px;font-weight:600;line-height:1.3}
+  .info h2 a{color:#e9ddff}
+  .info h2 a:hover{color:var(--orange2)}
+  .from{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .price{font-size:22px;font-weight:600;margin-top:8px}
+  .price sup{font-size:12px;top:-.6em}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .badge{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:4px}
+  .b-must{background:var(--orange);color:#1a0f05}
+  .b-qty{background:var(--card2);color:var(--muted);border:1px solid var(--line)}
+  .notes{color:#cfc6e2;font-size:13.5px;margin-top:8px;white-space:pre-wrap;word-break:break-word}
+  .added{color:var(--dim);font-size:12px;margin-top:8px}
+  .act{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+  .status{border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center}
+  .s-open{background:rgba(34,197,94,.1);color:#86efac;border:1px solid rgba(34,197,94,.35)}
+  .s-claimed{background:rgba(249,115,22,.12);color:#fdba74;border:1px solid rgba(249,115,22,.4)}
+  .s-bought{background:rgba(139,92,246,.15);color:#d8c9ff;border:1px solid rgba(139,92,246,.5)}
+  .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+
+  /* secret notes thread */
+  .thread{grid-column:2/-1;background:#140f1e;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:-6px}
+  @media(max-width:700px){.thread{grid-column:1/-1}}
+  .thread h4{margin:0 0 6px;font-size:12.5px;color:var(--purple2);display:flex;gap:6px;align-items:center}
+  .msg{font-size:13.5px;padding:5px 0;border-top:1px solid #241b34;display:flex;gap:8px}
+  .msg:first-of-type{border-top:0}
+  .msg b{color:var(--orange2);flex:none}
+  .msg span{flex:1;word-break:break-word}
+  .msg time{color:var(--dim);font-size:11.5px;flex:none}
+  .msgform{display:flex;gap:8px;margin-top:8px}
+  .msgform input{padding:6px 10px}
+
+  .empty{padding:50px 20px;text-align:center;color:var(--muted)}
+  .empty svg{width:70px;height:70px;opacity:.7;margin-bottom:8px}
+  .empty h3{color:var(--text);margin:4px 0}
+
+  /* cart summary */
+  .summary{padding:16px 20px;display:flex;gap:30px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--bg2)}
+  .summary div small{display:block;color:var(--muted);font-size:12px}
+  .summary div b{font-size:20px}
+  .summary .tot b{color:var(--orange)}
+  .group-h{padding:12px 20px 4px;font-weight:700;color:var(--purple2);font-size:14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);background:#160f22}
+
+  /* ---------- centered screens (auth/setup/onboarding) ---------- */
+  .center{min-height:100vh;display:grid;place-items:center;padding:30px 16px;
+    background:radial-gradient(900px 500px at 15% 0%,rgba(139,92,246,.25),transparent 60%),radial-gradient(700px 400px at 100% 100%,rgba(249,115,22,.18),transparent 60%),var(--bg)}
+  .card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:0 20px 60px #0008}
+  .card.wide{max-width:760px}
+  .card .logo{justify-content:center;font-size:28px;margin-bottom:6px;cursor:default}
+  .card .logo:hover{border-color:transparent}
+  .card .lede{text-align:center;color:var(--muted);margin:0 0 18px;font-size:14px}
+  .card h2{margin:0 0 4px;font-size:18px}
+  .seg{display:flex;background:#0d0914;border:1px solid var(--line);border-radius:99px;padding:3px;margin-bottom:8px}
+  .seg button{flex:1;background:none;border:0;border-radius:99px;padding:7px;cursor:pointer;font-weight:600;color:var(--muted)}
+  .seg button.on{background:var(--purple);color:#fff}
+  .err{color:#fca5a5;font-size:13px;margin-top:10px;min-height:1em}
+  .ok{color:#86efac;font-size:13px;margin-top:10px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.two{grid-template-columns:1fr}}
+  .two .panel{padding:18px}
+  .code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0914;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:13px}
+  ol.steps{color:var(--muted);font-size:14px;padding-left:20px} ol.steps li{margin:6px 0}
+
+  /* ---------- modal ---------- */
+  .modal-bg{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:50;padding:16px}
+  .modal{width:100%;max-width:560px;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+  .modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+  .modal header h3{margin:0}
+  .modal section{padding:14px 18px;border-bottom:1px solid var(--line)}
+  .modal section:last-child{border-bottom:0}
+  .modal h4{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--orange2)}
+  .x{background:none;border:0;font-size:24px;cursor:pointer;color:var(--muted);line-height:1}
+  .mem{display:flex;align-items:center;gap:10px;padding:6px 0}
+  .mem .meta{flex:1}
+  .mem small{color:var(--muted)}
+  .inline{display:flex;gap:8px;align-items:center}
+  .inline input{flex:1}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card2);border:1px solid var(--orange);padding:10px 18px;border-radius:99px;z-index:60;font-size:14px;box-shadow:0 10px 30px #000a}
+  .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:sp 1s linear infinite;margin:40px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app"><div class="center"><div class="spin"></div></div></div>
+<div id="modal-root"></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+/* =====================================================================
+   CONFIG — paste your Supabase project values here
+   (Supabase dashboard → Project Settings → API)
+   ===================================================================== */
+const SUPABASE_URL      = "YOUR_SUPABASE_URL";       // e.g. https://abcdxyz.supabase.co
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";  // the "anon public" key
+
+/* ===================================================================== */
+const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
+const sb = configured && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+const S = {
+  session:null, me:null,
+  households:[],          // [{id,name,invite_code,role,display_name}]
+  hhId: null,
+  members:[],             // [{user_id,display_name,role}]
+  items:[],
+  status:{},              // item_id -> {status,by_user}
+  comments:{},            // item_id -> [{id,author_id,body,created_at}]
+  view:'me',              // 'me' | user_id | 'cart'
+  q:'', filter:'all', sort:'priority',
+  openThreads:new Set(), editing:null, addOpen:false,
+  authMode:'in', loaded:false,
+};
+const pendingJoin = new URLSearchParams(location.search).get('join');
+let channel = null, pollTimer = null;
+
+/* ---------- utils ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl = u => /^https?:\/\//i.test(u||'') ? u : '';
+const money = n => n==null ? '' : Number(n).toLocaleString('en-US',{style:'currency',currency:'USD'});
+const domain = u => { try { return new URL(u).hostname.replace(/^www\./,''); } catch { return ''; } };
+const COLORS = ['#7c3aed','#ea580c','#a21caf','#c2410c','#6d28d9','#d97706','#9333ea','#b45309'];
+const colorFor = id => { let h=0; for (const c of String(id)) h=(h*31+c.charCodeAt(0))>>>0; return COLORS[h%COLORS.length]; };
+const initials = n => (n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const avatar = (id,name,size=34) => `<div class="avatar" style="background:${colorFor(id)};width:${size}px;height:${size}px;font-size:${Math.round(size*.38)}px">${esc(initials(name))}</div>`;
+const nameOf = id => S.members.find(m=>m.user_id===id)?.display_name || 'Someone';
+const firstName = id => nameOf(id).split(' ')[0];
+const ago = t => { const s=(Date.now()-new Date(t))/1000; if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
+const hh = () => S.households.find(h=>h.id===S.hhId);
+const myMember = () => S.members.find(m=>m.user_id===S.me);
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.add('hidden'),2600); }
+function friendly(e){ const m=e?.message||String(e); if(/duplicate key.*item_status/i.test(m)||/item_status_pkey/.test(m)) return 'Someone else just grabbed that one!'; if(/row-level security/i.test(m)) return "You don't have permission to do that."; return m; }
+
+const ICON = {
+  gift:`<svg viewBox="0 0 64 64"><rect x="8" y="26" width="48" height="32" rx="4" fill="#7c3aed"/><rect x="4" y="17" width="56" height="12" rx="3" fill="#a855f7"/><rect x="28" y="17" width="8" height="41" fill="#f97316"/><path d="M32 17c-6-11-19-8-14 0zM32 17c6-11 19-8 14 0z" fill="#f97316"/></svg>`,
+  search:`<svg viewBox="0 0 24 24" fill="none" stroke="#1a0f05" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>`,
+  cart:`<svg viewBox="0 0 40 32" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M2 3h6l4 19h20l4-14H10"/><circle cx="15" cy="28" r="2.2" fill="#fff"/><circle cx="29" cy="28" r="2.2" fill="#fff"/></svg>`,
+  lock:'🔒',
+};
+
+/* =====================================================================
+   DATA
+   ===================================================================== */
+async function loadHouseholds(){
+  const { data, error } = await sb.from('members')
+    .select('household_id, display_name, role, households(id,name,invite_code)')
+    .eq('user_id', S.me);
+  if (error) throw error;
+  S.households = (data||[]).filter(r=>r.households).map(r=>({ ...r.households, role:r.role, display_name:r.display_name }))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const saved = localStorage.getItem('ss_hh');
+  if (!S.households.some(h=>h.id===S.hhId)) S.hhId = S.households.find(h=>h.id===saved)?.id || S.households[0]?.id || null;
+}
+
+async function loadHousehold(){
+  if (!S.hhId) return;
+  localStorage.setItem('ss_hh', S.hhId);
+  const [m, it] = await Promise.all([
+    sb.from('members').select('user_id,display_name,role,joined_at').eq('household_id', S.hhId).order('joined_at'),
+    sb.from('items').select('*').eq('household_id', S.hhId).order('created_at',{ascending:false}),
+  ]);
+  if (m.error) throw m.error; if (it.error) throw it.error;
+  S.members = m.data; S.items = it.data;
+  if (S.view!=='me' && S.view!=='cart' && !S.members.some(x=>x.user_id===S.view)) S.view='me';
+  await loadSecrets();
+}
+
+// Status + secret notes. RLS automatically strips rows for YOUR OWN items.
+async function loadSecrets(){
+  const ids = S.items.filter(i=>i.owner_id!==S.me).map(i=>i.id);
+  if (!ids.length){ S.status={}; S.comments={}; return; }
+  const chunks=[]; for(let i=0;i<ids.length;i+=150) chunks.push(ids.slice(i,i+150));
+  const status={}, comments={};
+  for (const c of chunks){
+    const [st, cm] = await Promise.all([
+      sb.from('item_status').select('item_id,status,by_user,updated_at').in('item_id', c),
+      sb.from('comments').select('id,item_id,author_id,body,created_at').in('item_id', c).order('created_at'),
+    ]);
+    if (st.error) throw st.error; if (cm.error) throw cm.error;
+    st.data.forEach(r=>status[r.item_id]=r);
+    cm.data.forEach(r=>(comments[r.item_id] ||= []).push(r));
+  }
+  S.status=status; S.comments=comments;
+}
+
+function subscribe(){
+  if (channel) { sb.removeChannel(channel); channel=null; }
+  if (!S.hhId) return;
+  let t; const refresh = () => { clearTimeout(t); t=setTimeout(async()=>{ try{ await loadHousehold(); render(); }catch(e){console.warn(e);} }, 400); };
+  channel = sb.channel('hh-'+S.hhId)
+    .on('postgres_changes',{event:'*',schema:'public',table:'items',filter:'household_id=eq.'+S.hhId}, refresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'members',filter:'household_id=eq.'+S.hhId}, refresh)
+    .subscribe();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async()=>{
+    if (document.hidden || isTyping()) return;
+    try { await loadSecrets(); render(); } catch(e){ console.warn(e); }
+  }, 15000);
+}
+const isTyping = () => { const a=document.activeElement; return a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.closest('#app'); };
+document.addEventListener('visibilitychange', async()=>{ if(!document.hidden && S.hhId && S.me){ try{ await loadHousehold(); render(); }catch{} } });
+
+async function switchHousehold(id){
+  S.hhId=id; S.view='me'; S.openThreads.clear(); S.editing=null;
+  await loadHousehold(); subscribe(); render();
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+function render(){
+  const app = $('#app');
+  if (!configured) return app.innerHTML = setupScreen();
+  if (!sb) return app.innerHTML = `<div class="center"><div class="card"><h2>Couldn't load Supabase</h2><p class="lede">Check your internet connection and refresh.</p></div></div>`;
+  if (!S.session) return app.innerHTML = authScreen();
+  if (!S.loaded) return app.innerHTML = `<div class="center"><div class="spin"></div></div>`;
+  if (!S.households.length || S.showOnboard) return app.innerHTML = onboardScreen();
+
+  // keep focus/caret in search box across re-renders
+  const focused = document.activeElement?.id, caret = document.activeElement?.selectionStart;
+  app.innerHTML = navBar() + subNav() + `<div class="wrap">${sideBar()}<main>${S.view==='cart' ? cartView() : listView()}</main></div>`;
+  if (focused && document.getElementById(focused)) { const el=document.getElementById(focused); el.focus(); try{ el.setSelectionRange(caret,caret);}catch{} }
+}
+
+function setupScreen(){
+  return `<div class="center"><div class="card wide">
+    <div class="logo">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
+    <p class="lede">Almost there — connect your Supabase project.</p>
+    <ol class="steps">
+      <li>Create a free project at <b>supabase.com</b>.</li>
+      <li>Open <b>SQL Editor</b>, paste in <span class="code">schema.sql</span>, and click <b>Run</b>.</li>
+      <li>Go to <b>Project Settings → API</b> and copy the <b>Project URL</b> and <b>anon public</b> key.</li>
+      <li>Open <span class="code">index.html</span>, paste them into <span class="code">SUPABASE_URL</span> and <span class="code">SUPABASE_ANON_KEY</span> near the top of the script.</li>
+      <li>Drag the folder onto <b>app.netlify.com/drop</b>.</li>
+    </ol></div></div>`;
+}
+
+function authScreen(){
+  const up = S.authMode==='up';
+  return `<div class="center"><div class="card">
+    <div class="logo">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
+    <p class="lede">${pendingJoin ? "You've been invited to a family wish list! Sign in or create an account to join." : 'Family wish lists — with the surprises kept secret.'}</p>
+    <div class="seg"><button class="${!up?'on':''}" data-act="authmode" data-v="in">Sign in</button><button class="${up?'on':''}" data-act="authmode" data-v="up">Create account</button></div>
+    <form id="authform">
+      <label>Email</label><input type="email" name="email" required autocomplete="email">
+      <label>Password</label><input type="password" name="password" required minlength="6" autocomplete="${up?'new-password':'current-password'}">
+      <div style="height:14px"></div>
+      <button class="btn btn-orange btn-block" type="submit">${up?'Create account':'Sign in'}</button>
+      <div class="err" id="autherr"></div>
+    </form>
+    ${!up?`<div style="text-align:center;margin-top:6px"><button class="link-btn" data-act="forgot">Forgot password?</button></div>`:''}
+  </div></div>`;
+}
+
+function onboardScreen(){
+  const back = S.households.length ? `<div style="text-align:center;margin-top:14px"><button class="link-btn" data-act="cancelonboard">← Back to my lists</button></div>` : '';
+  return `<div class="center"><div class="card wide">
+    <div class="logo">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
+    <p class="lede">Start a household, or join one with an invite code.</p>
+    <div class="two">
+      <form class="panel" id="joinform" style="${pendingJoin?'border-color:var(--orange)':''}">
+        <h2>Join a household</h2>
+        <label>Invite code</label><input type="text" name="code" required value="${esc(pendingJoin||'')}" style="text-transform:uppercase;letter-spacing:.15em">
+        <label>Your name (what family sees)</label><input type="text" name="name" required maxlength="40" placeholder="e.g. Mom, Uncle Ray">
+        <div style="height:14px"></div><button class="btn btn-orange btn-block">Join</button>
+        <div class="err" id="joinerr"></div>
+      </form>
+      <form class="panel" id="createform">
+        <h2>Create a household</h2>
+        <label>Household name</label><input type="text" name="hh" required maxlength="60" placeholder="e.g. The Millers">
+        <label>Your name (what family sees)</label><input type="text" name="name" required maxlength="40" placeholder="e.g. Dad">
+        <div style="height:14px"></div><button class="btn btn-purple btn-block">Create</button>
+        <div class="err" id="createerr"></div>
+      </form>
+    </div>${back}
+    <div style="text-align:center;margin-top:10px"><button class="link-btn" data-act="signout">Sign out</button></div>
+  </div></div>`;
+}
+
+function myClaims(){ return S.items.filter(i=>S.status[i.id]?.by_user===S.me); }
+
+function navBar(){
+  const me = myMember();
+  const opts = S.households.map(h=>`<option value="${h.id}" ${h.id===S.hhId?'selected':''}>${esc(h.name)}</option>`).join('')
+    + `<option value="__new">+ Join / create another…</option>`;
+  return `<nav class="nav">
+    <div class="logo" data-act="view" data-v="me">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
+    <div class="nav-block"><small>Household</small><select id="hhsel">${opts}</select></div>
+    <form class="search" id="searchform"><input id="q" type="text" placeholder="Search all lists in ${esc(hh()?.name||'')}" value="${esc(S.q)}" autocomplete="off"><button aria-label="Search">${ICON.search}</button></form>
+    <div class="nav-right">
+      <div class="nav-block" data-act="settings"><small>Hello, ${esc(me?.display_name||'there')}</small><b>Account & Household ▾</b></div>
+      <div class="nav-block cart" data-act="view" data-v="cart" title="Things I'm getting">${ICON.cart}<span class="count">${myClaims().length}</span><b>My Shopping</b></div>
+    </div>
+  </nav>`;
+}
+
+function subNav(){
+  const others = S.members.filter(m=>m.user_id!==S.me);
+  return `<div class="subnav">
+    <button class="tab ${S.view==='me'?'active':''}" data-act="view" data-v="me">★ Your List</button>
+    ${others.map(m=>`<button class="tab ${S.view===m.user_id?'active':''}" data-act="view" data-v="${m.user_id}">${esc(m.display_name)}'s List</button>`).join('')}
+    <button class="tab ${S.view==='cart'?'active':''}" data-act="view" data-v="cart">🛒 My Shopping</button>
+    <button class="tab invite" data-act="invite">+ Invite family</button>
+  </div>`;
+}
+
+function sideBar(){
+  const rows = S.members.slice().sort((a,b)=>(a.user_id===S.me?-1:b.user_id===S.me?1:a.display_name.localeCompare(b.display_name))).map(m=>{
+    const its = S.items.filter(i=>i.owner_id===m.user_id), mine = m.user_id===S.me;
+    const done = its.filter(i=>S.status[i.id]).length;
+    const pct = its.length ? Math.round(done/its.length*100) : 0;
+    const active = (mine && S.view==='me') || S.view===m.user_id;
+    return `<div class="side-item ${active?'active':''}" data-act="view" data-v="${mine?'me':m.user_id}">
+      ${avatar(m.user_id,m.display_name)}
+      <div class="meta"><b>${mine?'Your List':esc(m.display_name)}</b>
+        <small>${its.length} item${its.length===1?'':'s'}${mine?' · status hidden '+ICON.lock:` · ${done} covered`}</small>
+        ${mine?'':`<div class="bar"><i style="width:${pct}%"></i></div>`}
+      </div></div>`;
+  }).join('');
+  return `<aside class="side"><div class="panel">
+    <h3>Household Lists</h3><div class="side-list">${rows}</div>
+    <div class="tip"><b>How the secret works:</b> everyone can see who's claimed or bought what — except the person whose list it is. Your own list never shows its status, so no spoilers.</div>
+  </div></aside>`;
+}
+
+function filtered(items, own){
+  const q=S.q.trim().toLowerCase();
+  let r = items.filter(i=>!q || [i.title,i.notes,domain(i.url)].join(' ').toLowerCase().includes(q));
+  if (!own){
+    if (S.filter==='open') r=r.filter(i=>!S.status[i.id]);
+    if (S.filter==='mine') r=r.filter(i=>S.status[i.id]?.by_user===S.me);
+  }
+  const s={
+    priority:(a,b)=>(b.priority-a.priority)||(new Date(b.created_at)-new Date(a.created_at)),
+    new:(a,b)=>new Date(b.created_at)-new Date(a.created_at),
+    low:(a,b)=>(a.price??1e9)-(b.price??1e9),
+    high:(a,b)=>(b.price??-1)-(a.price??-1),
+  }[S.sort];
+  return r.sort(s);
+}
+
+function listView(){
+  // Search across everyone when there's a query and we're on own list
+  const own = S.view==='me';
+  const ownerId = own ? S.me : S.view;
+  const owner = S.members.find(m=>m.user_id===ownerId);
+  if (S.q.trim()) return searchView();
+  const all = S.items.filter(i=>i.owner_id===ownerId);
+  const items = filtered(all, own);
+  const total = all.reduce((t,i)=>t+(Number(i.price)||0)*i.qty,0);
+  const covered = all.filter(i=>S.status[i.id]).length;
+
+  return `<div class="panel">
+    <div class="list-head">
+      <div style="display:flex;gap:14px;align-items:center">
+        ${avatar(ownerId, owner?.display_name, 54)}
+        <div><h1>${own?'Your Christmas List':esc(owner?.display_name)+"'s List"}</h1>
+        <p>${all.length} item${all.length===1?'':'s'}${total?` · about ${money(total)} total`:''}${own?'':` · ${covered} of ${all.length} covered`}</p>
+        <span class="secret-banner">${ICON.lock} ${own?"You can't see what's been bought from your list. No peeking!":`${esc(owner?.display_name)} can't see any of the status or secret notes on this page.`}</span></div>
+      </div>
+      ${own?`<button class="btn btn-orange" data-act="toggleadd">${S.addOpen?'Close':'+ Add an item'}</button>`:''}
+    </div>
+    ${own && S.addOpen ? itemForm() : ''}
+    <div class="toolbar">
+      ${own?'':`<button class="pill ${S.filter==='all'?'on':''}" data-act="filter" data-v="all">All</button>
+      <button class="pill ${S.filter==='open'?'on':''}" data-act="filter" data-v="open">Still needed</button>
+      <button class="pill ${S.filter==='mine'?'on':''}" data-act="filter" data-v="mine">I'm getting</button>`}
+      <select id="sortsel">
+        <option value="priority" ${S.sort==='priority'?'selected':''}>Sort: Must-haves first</option>
+        <option value="new" ${S.sort==='new'?'selected':''}>Sort: Newest</option>
+        <option value="low" ${S.sort==='low'?'selected':''}>Sort: Price low → high</option>
+        <option value="high" ${S.sort==='high'?'selected':''}>Sort: Price high → low</option>
+      </select>
+    </div>
+    ${items.length ? items.map(i=>S.editing===i.id ? `<div class="row" style="display:block">${itemForm(i)}</div>` : itemRow(i)).join('') : emptyState(own, all.length)}
+  </div>`;
+}
+
+function searchView(){
+  const items = filtered(S.items.slice(), true);
+  return `<div class="panel">
+    <div class="list-head"><div><h1>Results for “${esc(S.q)}”</h1><p>${items.length} match${items.length===1?'':'es'} across every list</p></div>
+    <button class="btn btn-ghost" data-act="clearq">Clear search</button></div>
+    ${items.length ? items.map(i=>itemRow(i,true)).join('') : `<div class="empty"><h3>Nothing found</h3>Try a different word.</div>`}
+  </div>`;
+}
+
+function cartView(){
+  const mine = myClaims();
+  const bought = mine.filter(i=>S.status[i.id].status==='purchased');
+  const sum = arr => arr.reduce((t,i)=>t+(Number(i.price)||0)*i.qty,0);
+  const byOwner = {};
+  mine.forEach(i=>(byOwner[i.owner_id] ||= []).push(i));
+  return `<div class="panel">
+    <div class="list-head"><div><h1>🛒 My Shopping</h1><p>Everything you've claimed or bought, grouped by who it's for.</p></div></div>
+    <div class="summary">
+      <div><small>Claimed (still to buy)</small><b>${mine.length-bought.length}</b></div>
+      <div><small>Purchased</small><b>${bought.length}</b></div>
+      <div><small>Still to spend</small><b>${money(sum(mine)-sum(bought))}</b></div>
+      <div class="tot"><small>Spent so far</small><b>${money(sum(bought))}</b></div>
+    </div>
+    ${mine.length ? Object.entries(byOwner).map(([oid,its])=>`
+      <div class="group-h">${avatar(oid,nameOf(oid),24)} For ${esc(nameOf(oid))} · ${money(sum(its))}</div>
+      ${its.map(i=>itemRow(i,true)).join('')}`).join('')
+    : `<div class="empty">${ICON.cart.replace('#fff','#a78bfa')}<h3>Your cart is empty</h3>Open someone's list and hit <b>“I'm getting this”</b> to claim a gift.</div>`}
+  </div>`;
+}
+
+function emptyState(own, hasAny){
+  if (hasAny) return `<div class="empty"><h3>Nothing matches that filter</h3></div>`;
+  return own
+    ? `<div class="empty">${ICON.gift}<h3>Your list is empty</h3>Add things you'd love — paste a link from any store.<br><br><button class="btn btn-orange" data-act="toggleadd">+ Add your first item</button></div>`
+    : `<div class="empty">${ICON.gift}<h3>Nothing here yet</h3>Give them a nudge to start their list!</div>`;
+}
+
+function thumb(i){
+  const img = safeUrl(i.image_url);
+  if (img) return `<div class="thumb"><img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.className='thumb ph';this.outerHTML='<span>🎁</span>'"></div>`;
+  const d = domain(i.url);
+  if (d) return `<div class="thumb ph"><img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(d)}&sz=128" alt="" loading="lazy" onerror="this.outerHTML='<span>🎁</span>'"></div>`;
+  return `<div class="thumb ph"><span>🎁</span></div>`;
+}
+
+function priceHtml(p){
+  if (p==null) return '';
+  const [d,c] = Number(p).toFixed(2).split('.');
+  return `<div class="price"><sup>$</sup>${Number(d).toLocaleString()}<sup>${c}</sup></div>`;
+}
+
+function itemRow(i, showOwner=false){
+  const own = i.owner_id===S.me;
+  const url = safeUrl(i.url), d = domain(url);
+  const st = own ? null : S.status[i.id];
+  const notes = S.comments[i.id]||[];
+  const open = S.openThreads.has(i.id);
+  let act='';
+  if (own){
+    act = `<div class="status s-bought" style="justify-content:center">${ICON.lock} Status hidden from you</div>
+      <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${i.id}">Edit</button>
+      <button class="btn btn-danger btn-sm" data-act="del" data-id="${i.id}">Delete</button>`;
+  } else {
+    const mine = st?.by_user===S.me;
+    if (!st) act = `<div class="status s-open"><span class="dot"></span>Available</div>
+      <button class="btn btn-amber" data-act="claim" data-id="${i.id}">I'm getting this</button>
+      <button class="btn btn-orange" data-act="buy" data-id="${i.id}">Mark purchased</button>`;
+    else if (st.status==='claimed') act = `<div class="status s-claimed"><span class="dot"></span>${mine?'You claimed this':'Claimed by '+esc(nameOf(st.by_user))}</div>
+      ${mine?`<button class="btn btn-orange" data-act="buy" data-id="${i.id}">Mark purchased</button><button class="btn btn-ghost btn-sm" data-act="release" data-id="${i.id}">Release it</button>`:''}`;
+    else act = `<div class="status s-bought"><span class="dot"></span>✓ ${mine?'You bought this':'Bought by '+esc(nameOf(st.by_user))}</div>
+      ${mine?`<button class="btn btn-ghost btn-sm" data-act="release" data-id="${i.id}">Undo purchase</button>`:''}`;
+    act += `<button class="link-btn" style="text-align:center" data-act="thread" data-id="${i.id}">💬 Secret notes${notes.length?` (${notes.length})`:''}</button>`;
+  }
+  return `<div class="row">
+    ${thumb(i)}
+    <div class="info">
+      <h2>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>`:esc(i.title)}</h2>
+      <div class="from">${showOwner?`For <b>${own?'you':esc(nameOf(i.owner_id))}</b>${d?' · ':''}`:''}${d?`from ${esc(d)}`:''}</div>
+      ${priceHtml(i.price)}
+      <div class="badges">${i.priority?'<span class="badge b-must">★ Must-have</span>':''}${i.qty>1?`<span class="badge b-qty">Qty: ${i.qty}</span>`:''}</div>
+      ${i.notes?`<div class="notes">${esc(i.notes)}</div>`:''}
+      <div class="added">Added ${ago(i.created_at)}</div>
+    </div>
+    <div class="act">${act}</div>
+    ${!own && open ? threadHtml(i, notes) : ''}
+  </div>`;
+}
+
+function threadHtml(i, notes){
+  return `<div class="thread">
+    <h4>${ICON.lock} Secret notes — hidden from ${esc(firstName(i.owner_id))}</h4>
+    ${notes.length ? notes.map(n=>`<div class="msg"><b>${esc(nameOf(n.author_id))}</b><span>${esc(n.body)}</span><time>${ago(n.created_at)}</time>${n.author_id===S.me?`<button class="link-btn" data-act="delnote" data-id="${n.id}" title="Delete">✕</button>`:''}</div>`).join('')
+      : `<div class="msg" style="color:var(--muted)">No notes yet. Coordinate here — “want to go halves?”, “I got the blue one”.</div>`}
+    <form class="msgform" data-form="note" data-id="${i.id}"><input type="text" name="body" maxlength="500" placeholder="Write a secret note…" required><button class="btn btn-purple btn-sm">Post</button></form>
+  </div>`;
+}
+
+function itemForm(i){
+  const e = i||{};
+  return `<form class="addbox" data-form="item" ${i?`data-id="${i.id}"`:''} style="${i?'border:0;padding:0;background:none':''}">
+    <div class="addgrid">
+      <div class="half"><label>What do you want? *</label><input type="text" name="title" required maxlength="200" value="${esc(e.title)}" placeholder="e.g. Yeti 20oz tumbler, navy"></div>
+      <div class="half"><label>Link</label><input type="url" name="url" value="${esc(e.url)}" placeholder="https://www.amazon.com/…"></div>
+      <div class="half"><label>Picture link (optional)</label><input type="url" name="image_url" value="${esc(e.image_url)}" placeholder="Right-click product photo → Copy image address"></div>
+      <div><label>Price</label><input type="number" name="price" min="0" step="0.01" value="${e.price??''}" placeholder="0.00"></div>
+      <div><label>Qty</label><input type="number" name="qty" min="1" max="99" value="${e.qty||1}"></div>
+      <div class="full"><label>Notes (size, color, “any brand is fine”…)</label><textarea name="notes" maxlength="500">${esc(e.notes)}</textarea></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <label class="check"><input type="checkbox" name="priority" ${e.priority?'checked':''}> ★ This is a must-have</label>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        ${i?`<button type="button" class="btn btn-ghost" data-act="canceledit">Cancel</button>`:''}
+        <button class="btn btn-orange">${i?'Save changes':'Add to my list'}</button>
+      </div>
+    </div>
+  </form>`;
+}
+
+/* ---------- settings modal ---------- */
+function openSettings(focusInvite){
+  const h = hh(), me = myMember(), admin = me?.role==='admin';
+  const link = location.origin + location.pathname + '?join=' + h.invite_code;
+  $('#modal-root').innerHTML = `<div class="modal-bg" data-act="closemodal"><div class="modal">
+    <header><h3>Account & Household</h3><button class="x" data-act="closemodal">×</button></header>
+    <section id="invite-sec" style="${focusInvite?'background:#22152f':''}">
+      <h4>Invite family to ${esc(h.name)}</h4>
+      <p style="margin:0 0 8px;color:var(--muted);font-size:13.5px">Send this link. They'll make an account, then land right in your household.</p>
+      <div class="inline"><input type="text" readonly value="${esc(link)}" id="invlink"><button class="btn btn-orange" data-act="copylink">Copy link</button></div>
+      <p style="margin:8px 0 0;font-size:13px;color:var(--muted)">Or share the code: <span class="code" style="font-size:15px;letter-spacing:.15em;color:var(--amber)">${esc(h.invite_code)}</span>
+      ${admin?` &nbsp;<button class="link-btn" data-act="resetcode">Make a new code</button>`:''}</p>
+    </section>
+    <section><h4>Your name in this household</h4>
+      <form class="inline" id="nameform"><input type="text" name="n" maxlength="40" required value="${esc(me?.display_name)}"><button class="btn btn-purple">Save</button></form>
+    </section>
+    ${admin?`<section><h4>Household name</h4><form class="inline" id="hhnameform"><input type="text" name="n" maxlength="60" required value="${esc(h.name)}"><button class="btn btn-purple">Save</button></form></section>`:''}
+    <section><h4>Members (${S.members.length})</h4>
+      ${S.members.map(m=>`<div class="mem">${avatar(m.user_id,m.display_name,30)}<div class="meta"><b>${esc(m.display_name)}</b>${m.user_id===S.me?' <small>(you)</small>':''}<br><small>${m.role==='admin'?'Admin':'Member'}</small></div>
+        ${admin && m.user_id!==S.me?`<button class="btn btn-danger btn-sm" data-act="kick" data-id="${m.user_id}">Remove</button>`:''}</div>`).join('')}
+    </section>
+    <section style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" data-act="newhh">Join / create another household</button>
+      <button class="btn btn-danger" data-act="leave">Leave ${esc(h.name)}</button>
+      <button class="btn btn-ghost" data-act="signout" style="margin-left:auto">Sign out</button>
+    </section>
+  </div></div>`;
+  if (focusInvite) $('#invlink').select();
+}
+const closeModal = () => $('#modal-root').innerHTML='';
+
+// In-page confirm dialog (works everywhere, unlike window.confirm in some embeds)
+function ask(msg, okLabel='Yes, do it'){
+  return new Promise(res=>{
+    const root=document.createElement('div');
+    root.className='modal-bg'; root.style.zIndex=70;
+    root.innerHTML=`<div class="modal" style="max-width:420px"><section style="border:0;padding:20px 20px 8px"><p style="margin:0;font-size:15px"></p></section>
+      <section style="border:0;display:flex;gap:8px;justify-content:flex-end;padding:12px 20px 18px"><button class="btn btn-ghost" data-r="0">Cancel</button><button class="btn btn-orange" data-r="1"></button></section></div>`;
+    root.querySelector('p').textContent=msg; root.querySelector('[data-r="1"]').textContent=okLabel;
+    root.addEventListener('click',e=>{ const b=e.target.closest('[data-r]'); if(!b && e.target!==root) return; e.stopPropagation(); root.remove(); res(b?.dataset.r==='1'); });
+    document.body.appendChild(root); root.querySelector('[data-r="1"]').focus();
+  });
+}
+
+/* =====================================================================
+   ACTIONS
+   ===================================================================== */
+async function run(fn){ try { await fn(); } catch(e){ console.error(e); toast(friendly(e)); } }
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const a = el.dataset.act, id = el.dataset.id, v = el.dataset.v;
+  if (a==='closemodal' && e.target!==el && !e.target.closest('.x')) return;
+  run(async()=>{
+    switch(a){
+      case 'authmode': S.authMode=v; render(); break;
+      case 'forgot': {
+        const email = $('#authform [name=email]').value.trim();
+        if (!email) { $('#autherr').textContent='Type your email above first.'; break; }
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin+location.pathname });
+        if (error) throw error; $('#autherr').className='ok'; $('#autherr').textContent='Check your email for a reset link.'; break;
+      }
+      case 'signout': closeModal(); await sb.auth.signOut(); break;
+      case 'view': S.view=v; S.q=''; S.filter='all'; S.addOpen=false; S.editing=null; render(); window.scrollTo({top:0}); break;
+      case 'filter': S.filter=v; render(); break;
+      case 'clearq': S.q=''; render(); break;
+      case 'toggleadd': S.addOpen=!S.addOpen; S.view='me'; render(); if(S.addOpen) $('[data-form=item] [name=title]')?.focus(); break;
+      case 'edit': S.editing=id; render(); break;
+      case 'canceledit': S.editing=null; render(); break;
+      case 'del': {
+        const it=S.items.find(x=>x.id===id);
+        if (!await ask(`Remove “${it.title}” from your list?`)) break;
+        const { error } = await sb.from('items').delete().eq('id', id); if (error) throw error;
+        S.items=S.items.filter(x=>x.id!==id); render(); toast('Removed'); break;
+      }
+      case 'claim': case 'buy': {
+        const status = a==='claim'?'claimed':'purchased';
+        const cur = S.status[id];
+        const q = cur ? sb.from('item_status').update({status, updated_at:new Date().toISOString()}).eq('item_id',id).eq('by_user',S.me)
+                      : sb.from('item_status').insert({item_id:id, status, by_user:S.me});
+        const { error } = await q;
+        if (error) { await loadSecrets(); render(); throw error; }
+        S.status[id] = { item_id:id, status, by_user:S.me }; render();
+        toast(status==='claimed' ? "It's yours — nobody else will grab it." : 'Marked as purchased 🎁'); break;
+      }
+      case 'release': {
+        const { error } = await sb.from('item_status').delete().eq('item_id',id).eq('by_user',S.me); if (error) throw error;
+        delete S.status[id]; render(); toast('Released — it’s available again'); break;
+      }
+      case 'thread': S.openThreads.has(id)?S.openThreads.delete(id):S.openThreads.add(id); render();
+        if (S.openThreads.has(id)) document.querySelector(`[data-form=note][data-id="${id}"] input`)?.focus(); break;
+      case 'delnote': {
+        const { error } = await sb.from('comments').delete().eq('id',id); if (error) throw error;
+        for (const k in S.comments) S.comments[k]=S.comments[k].filter(n=>n.id!==id); render(); break;
+      }
+      case 'settings': openSettings(false); break;
+      case 'invite': openSettings(true); break;
+      case 'closemodal': closeModal(); break;
+      case 'copylink': { const inp=$('#invlink'); inp.select(); try{ await navigator.clipboard.writeText(inp.value); }catch{ document.execCommand('copy'); } toast('Invite link copied!'); break; }
+      case 'resetcode': {
+        if (!await ask('Make a new invite code? The old link will stop working (current members stay).')) break;
+        const { data, error } = await sb.rpc('reset_invite_code', { hh:S.hhId }); if (error) throw error;
+        hh().invite_code = data; openSettings(true); break;
+      }
+      case 'kick': {
+        if (!await ask(`Remove ${nameOf(id)} from this household? Their list will stay but they lose access.`)) break;
+        const { error } = await sb.from('members').delete().eq('household_id',S.hhId).eq('user_id',id); if (error) throw error;
+        await loadHousehold(); openSettings(false); render(); break;
+      }
+      case 'leave': {
+        if (!await ask(`Leave ${hh().name}? You'll need a new invite to come back.`)) break;
+        const { error } = await sb.from('members').delete().eq('household_id',S.hhId).eq('user_id',S.me); if (error) throw error;
+        closeModal(); S.hhId=null; await loadHouseholds(); if (S.hhId){ await loadHousehold(); subscribe(); } render(); break;
+      }
+      case 'newhh': closeModal(); S.showOnboard=true; render(); break;
+      case 'cancelonboard': S.showOnboard=false; render(); break;
+    }
+  });
+});
+
+document.addEventListener('change', e => {
+  if (e.target.id==='hhsel'){
+    const v=e.target.value;
+    if (v==='__new'){ S.showOnboard=true; render(); return; }
+    run(()=>switchHousehold(v));
+  }
+  if (e.target.id==='sortsel'){ S.sort=e.target.value; render(); }
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id==='q'){ S.q=e.target.value; render(); }
+});
+
+document.addEventListener('submit', e => {
+  const f = e.target; e.preventDefault();
+  const fd = new FormData(f);
+  const btn = f.querySelector('button:not([type=button])'); if (btn) btn.disabled=true;
+  const done = () => { if (btn && document.body.contains(btn)) btn.disabled=false; };
+  const showErr = (sel, err) => { const el=$(sel); if (el) el.textContent=friendly(err); else toast(friendly(err)); };
+
+  if (f.id==='searchform') { done(); return; }
+
+  if (f.id==='authform') return (async()=>{
+    const email=fd.get('email').trim(), password=fd.get('password');
+    const r = S.authMode==='up' ? await sb.auth.signUp({ email, password, options:{ emailRedirectTo: location.href } })
+                                : await sb.auth.signInWithPassword({ email, password });
+    done();
+    if (r.error) return showErr('#autherr', r.error);
+    if (S.authMode==='up' && !r.data.session){ const el=$('#autherr'); el.className='ok'; el.textContent='Check your email to confirm your account, then come back and sign in.'; }
+  })();
+
+  if (f.id==='joinform' || f.id==='createform') return (async()=>{
+    const join = f.id==='joinform';
+    const { data, error } = join
+      ? await sb.rpc('join_household', { p_code: fd.get('code'), p_display_name: fd.get('name') })
+      : await sb.rpc('create_household', { p_name: fd.get('hh'), p_display_name: fd.get('name') });
+    done();
+    if (error) return showErr(join?'#joinerr':'#createerr', error);
+    if (pendingJoin) history.replaceState(null,'',location.pathname);
+    S.showOnboard=false; S.hhId=data;
+    await loadHouseholds(); await loadHousehold(); subscribe(); render();
+    toast(join ? `Welcome to ${hh()?.name}!` : 'Household created — now invite your family!');
+    if (!join) openSettings(true);
+  })().catch(err=>{ done(); toast(friendly(err)); });
+
+  if (f.dataset.form==='item') return (async()=>{
+    const id = f.dataset.id;
+    const row = {
+      title: fd.get('title').trim(),
+      url: fd.get('url').trim() || null,
+      image_url: fd.get('image_url').trim() || null,
+      price: fd.get('price') ? Number(fd.get('price')) : null,
+      qty: Math.max(1, Math.min(99, parseInt(fd.get('qty'))||1)),
+      notes: fd.get('notes').trim() || null,
+      priority: fd.get('priority')==='on',
+    };
+    const q = id ? sb.from('items').update(row).eq('id',id).select().single()
+                 : sb.from('items').insert({ ...row, household_id:S.hhId, owner_id:S.me }).select().single();
+    const { data, error } = await q; done();
+    if (error) return toast(friendly(error));
+    if (id){ S.items = S.items.map(x=>x.id===id?data:x); S.editing=null; toast('Saved'); }
+    else { S.items.unshift(data); toast('Added to your list'); }
+    render();
+    if (!id && S.addOpen) $('[data-form=item] [name=title]')?.focus();
+  })();
+
+  if (f.dataset.form==='note') return (async()=>{
+    const item_id=f.dataset.id, body=fd.get('body').trim();
+    if (!body) return done();
+    const { data, error } = await sb.from('comments').insert({ item_id, body, author_id:S.me }).select().single(); done();
+    if (error) return toast(friendly(error));
+    (S.comments[item_id] ||= []).push(data); render();
+    document.querySelector(`[data-form=note][data-id="${item_id}"] input`)?.focus();
+  })();
+
+  if (f.id==='nameform') return (async()=>{
+    const { error } = await sb.from('members').update({ display_name: fd.get('n').trim() }).eq('household_id',S.hhId).eq('user_id',S.me); done();
+    if (error) return toast(friendly(error));
+    await loadHousehold(); await loadHouseholds(); render(); openSettings(false); toast('Name updated');
+  })();
+
+  if (f.id==='hhnameform') return (async()=>{
+    const { error } = await sb.from('households').update({ name: fd.get('n').trim() }).eq('id',S.hhId); done();
+    if (error) return toast(friendly(error));
+    await loadHouseholds(); render(); openSettings(false); toast('Household renamed');
+  })();
+  done();
+});
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+async function onSession(session){
+  const was = S.me;
+  S.session = session; S.me = session?.user?.id || null;
+  if (!S.me){ S.loaded=false; S.households=[]; S.hhId=null; if (channel){ sb.removeChannel(channel); channel=null; } clearInterval(pollTimer); render(); return; }
+  if (was===S.me && S.loaded) return;
+  S.loaded=false; render();
+  try {
+    await loadHouseholds();
+    if (pendingJoin && !S.households.some(h=>h.invite_code===pendingJoin.toUpperCase())) S.showOnboard = true;
+    if (S.hhId){ await loadHousehold(); subscribe(); }
+  } catch(e){ console.error(e); toast(friendly(e)); }
+  S.loaded=true; render();
+}
+
+(async()=>{
+  if (!sb) return render();
+  sb.auth.onAuthStateChange((evt, session) => {
+    if (evt==='PASSWORD_RECOVERY'){
+      setTimeout(async()=>{ const p = prompt('Choose a new password (6+ characters):'); if (p){ const {error}=await sb.auth.updateUser({password:p}); toast(error?friendly(error):'Password updated'); } },0);
+    }
+    setTimeout(()=>onSession(session),0);
+  });
+  const { data } = await sb.auth.getSession();
+  await onSession(data.session);
+})();
+</script>
+</body>
+</html>
