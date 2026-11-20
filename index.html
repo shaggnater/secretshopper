@@ -109,6 +109,18 @@
   .addgrid .full{grid-column:1/-1}
   .addgrid .half{grid-column:span 2}
   @media(max-width:700px){.addgrid{grid-template-columns:1fr 1fr}.addgrid .half{grid-column:1/-1}}
+  .lookup{background:#140f1e;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .lookup label{margin-top:0;color:var(--orange2)}
+  .lookup .inline{display:flex;gap:8px}
+  .lookup .inline input{flex:1;min-width:0}
+  .lookup-status{font-size:13px}
+  .lookup-status:not(:empty){margin-top:8px}
+  .lookup-status.busy{color:var(--purple2)}
+  .lookup-status.busy::before{content:"";display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:sp 1s linear infinite;margin-right:7px;vertical-align:-1px}
+  .lookup-status.ok{color:#86efac}
+  .lookup-status.warn{color:#fdba74}
+  .lookup-body{display:grid;grid-template-columns:120px 1fr;gap:16px;margin-top:4px}
+  .preview{padding-top:30px}
   .check{display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;color:var(--text);font-size:13.5px}
   .check input{accent-color:var(--orange);width:16px;height:16px}
 
@@ -244,6 +256,10 @@
     .addbox{padding:12px}
     .addgrid{grid-template-columns:1fr 1fr}
     .addgrid .half{grid-column:1/-1}
+    .lookup{padding:10px}
+    .lookup .btn{padding:7px 12px}
+    .lookup-body{grid-template-columns:1fr;gap:0}
+    .preview{padding-top:12px;width:84px}
 
     /* item rows: small thumb beside text, actions in a compact row underneath */
     .row{grid-template-columns:76px 1fr;gap:10px 12px;padding:14px 12px}
@@ -413,7 +429,9 @@ function render(){
 
   // keep focus/caret in search box across re-renders
   const focused = document.activeElement?.id, caret = document.activeElement?.selectionStart;
+  const drafts = S.skipDraft ? {} : snapshotForms(); S.skipDraft = false;
   app.innerHTML = navBar() + subNav() + `<div class="wrap">${sideBar()}<main>${S.view==='cart' ? cartView() : listView()}</main></div>`;
+  restoreForms(drafts);
   if (focused && document.getElementById(focused)) { const el=document.getElementById(focused); el.focus(); try{ el.setSelectionRange(caret,caret);}catch{} }
 }
 
@@ -670,14 +688,23 @@ function threadHtml(i, notes){
 
 function itemForm(i){
   const e = i||{};
+  const img = safeUrl(e.image_url);
   return `<form class="addbox" data-form="item" ${i?`data-id="${i.id}"`:''} style="${i?'border:0;padding:0;background:none':''}">
-    <div class="addgrid">
-      <div class="half"><label>What do you want? *</label><input type="text" name="title" required maxlength="200" value="${esc(e.title)}" placeholder="e.g. Yeti 20oz tumbler, navy"></div>
-      <div class="half"><label>Link</label><input type="url" name="url" value="${esc(e.url)}" placeholder="https://www.amazon.com/…"></div>
-      <div class="half"><label>Picture link (optional)</label><input type="url" name="image_url" value="${esc(e.image_url)}" placeholder="Right-click product photo → Copy image address"></div>
-      <div><label>Price</label><input type="number" name="price" min="0" step="0.01" value="${e.price??''}" placeholder="0.00"></div>
-      <div><label>Qty</label><input type="number" name="qty" min="1" max="99" value="${e.qty||1}"></div>
-      <div class="full"><label>Notes (size, color, “any brand is fine”…)</label><textarea name="notes" maxlength="500">${esc(e.notes)}</textarea></div>
+    <div class="lookup">
+      <label>Paste a link from any store — we'll fill in the rest</label>
+      <div class="inline"><input type="url" name="url" value="${esc(e.url)}" placeholder="https://www.amazon.com/…" autocomplete="off">
+        <button type="button" class="btn btn-purple" data-act="lookup">Get details</button></div>
+      <div class="lookup-status" data-status></div>
+    </div>
+    <div class="lookup-body">
+      <div class="preview">${img?`<div class="thumb"><img src="${esc(img)}" alt="" referrerpolicy="no-referrer"></div>`:`<div class="thumb ph"><span>🎁</span></div>`}</div>
+      <div class="addgrid">
+        <div class="full"><label>Item name *</label><input type="text" name="title" required maxlength="200" value="${esc(e.title)}" placeholder="Filled in from the link, or type it yourself"></div>
+        <div class="half"><label>Picture link</label><input type="url" name="image_url" value="${esc(e.image_url)}" placeholder="Filled in from the link"></div>
+        <div><label>Price</label><input type="number" name="price" min="0" step="0.01" value="${e.price??''}" placeholder="0.00"></div>
+        <div><label>Qty</label><input type="number" name="qty" min="1" max="99" value="${e.qty||1}"></div>
+        <div class="full"><label>Description & notes (size, color, “any brand is fine”…)</label><textarea name="notes" maxlength="500">${esc(e.notes)}</textarea></div>
+      </div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <label class="check"><input type="checkbox" name="priority" ${e.priority?'checked':''}> ★ This is a must-have</label>
@@ -687,6 +714,88 @@ function itemForm(i){
       </div>
     </div>
   </form>`;
+}
+
+/* ---------- product lookup (Supabase Edge Function "fetch-product") ---------- */
+const formKey = f => f.dataset.form==='item' ? 'item:'+(f.dataset.id||'new') : 'note:'+f.dataset.id;
+const findForm = key => [...document.querySelectorAll('form[data-form]')].find(f=>formKey(f)===key);
+
+function updatePreview(f){
+  const box = f.querySelector('.preview'); if (!box) return;
+  const u = safeUrl(f.elements.image_url.value.trim());
+  box.innerHTML = u ? `<div class="thumb"><img src="${esc(u)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.className='thumb ph';this.outerHTML='<span>🎁</span>'"></div>` : `<div class="thumb ph"><span>🎁</span></div>`;
+}
+function setLookupStatus(f, cls, msg){ const st=f.querySelector('[data-status]'); if(st){ st.className='lookup-status '+cls; st.textContent=msg; } }
+
+const inflight = {};
+async function lookupProduct(form, manual){
+  const key = formKey(form);
+  const url = form.elements.url.value.trim();
+  if (inflight[key]===url) return;
+  if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(url)) { if (manual) setLookupStatus(form,'warn','Paste the full link — it should start with https://'); return; }
+  if (!manual && form.dataset.looked===url) return;
+  form.dataset.looked = url; inflight[key] = url;
+  setLookupStatus(form,'busy','Looking up that product…');
+  form.querySelector('[data-act=lookup]').disabled = true;
+
+  let d;
+  try {
+    const r = await sb.functions.invoke('fetch-product', { body:{ url } });
+    if (r.error) throw r.error;
+    d = r.data || {};
+  } catch (e) {
+    const notSetUp = /404|not found|Failed to send|FunctionsFetchError|FunctionsRelayError/i.test((e?.name||'')+' '+(e?.message||'')+' '+(e?.context?.status||''));
+    d = { ok:false, error: notSetUp ? "Product lookup isn't set up yet (see README step 6)." : "Couldn't reach the lookup service." };
+  }
+  delete inflight[key];
+
+  const f = findForm(key); if (!f) return;          // form was closed meanwhile
+  f.dataset.looked = url;
+  const btn = f.querySelector('[data-act=lookup]'); if (btn) btn.disabled = false;
+  if (!d.ok) return setLookupStatus(f,'warn', `${d.error || "Couldn't read that page."} Fill in the details below.`);
+
+  const put = (name, val, overwrite) => {
+    if (val==null || val==='') return false;
+    const el = f.elements[name];
+    if (el.value.trim() && !overwrite && el.dataset.auto!=='1') return false;   // never clobber what you typed
+    el.value = val; el.dataset.auto = '1'; return true;
+  };
+  const got = [];
+  if (put('title', d.title, manual)) got.push('name');
+  if (put('image_url', d.image, manual)) got.push('photo');
+  if (put('price', d.price!=null ? Number(d.price).toFixed(2) : null, manual)) got.push('price');
+  if (put('notes', d.description, false)) got.push('description');
+  updatePreview(f);
+  const missing = [!d.title&&'name', !d.image&&'photo', d.price==null&&'price'].filter(Boolean);
+  const list = a => a.length>1 ? a.slice(0,-1).join(', ')+' and '+a.at(-1) : a[0];
+  setLookupStatus(f, missing.length?'warn':'ok',
+    (got.length ? `✓ Filled in the ${list(got)}.` : '✓ Found it.') +
+    (missing.length ? ` Couldn't find the ${list(missing)} — add it below if you like.` : ' Check it over and change anything you want.'));
+}
+
+/* keep half-typed forms when the page refreshes itself */
+function snapshotForms(){
+  const out = {};
+  document.querySelectorAll('form[data-form]').forEach(f=>{
+    const v = {};
+    for (const el of f.elements) if (el.name) v[el.name] = { val: el.type==='checkbox' ? el.checked : el.value, auto: el.dataset.auto };
+    const st = f.querySelector('[data-status]');
+    out[formKey(f)] = { v, looked: f.dataset.looked, st: st ? [st.className, st.textContent] : null };
+  });
+  return out;
+}
+function restoreForms(snap){
+  for (const [key, d] of Object.entries(snap)){
+    const f = findForm(key); if (!f) continue;
+    for (const [name, {val, auto}] of Object.entries(d.v)){
+      const el = f.elements[name]; if (!el) continue;
+      if (el.type==='checkbox') el.checked = val; else el.value = val;
+      if (auto) el.dataset.auto = auto;
+    }
+    if (d.looked) f.dataset.looked = d.looked;
+    if (d.st) { const st=f.querySelector('[data-status]'); if (st){ st.className=d.st[0]; st.textContent=d.st[1]; } }
+    if (f.dataset.form==='item') updatePreview(f);
+  }
 }
 
 /* ---------- settings modal ---------- */
@@ -755,7 +864,8 @@ document.addEventListener('click', e => {
       case 'view': S.view=v; S.q=''; S.filter='all'; S.addOpen=false; S.editing=null; render(); window.scrollTo({top:0}); break;
       case 'filter': S.filter=v; render(); break;
       case 'clearq': S.q=''; render(); break;
-      case 'toggleadd': S.addOpen=!S.addOpen; S.view='me'; render(); if(S.addOpen) $('[data-form=item] [name=title]')?.focus(); break;
+      case 'toggleadd': S.addOpen=!S.addOpen; S.view='me'; render(); if(S.addOpen) $('[data-form=item] [name=url]')?.focus(); break;
+      case 'lookup': await lookupProduct(el.closest('form'), true); break;
       case 'edit': S.editing=id; render(); break;
       case 'canceledit': S.editing=null; render(); break;
       case 'del': {
@@ -819,7 +929,19 @@ document.addEventListener('change', e => {
 });
 
 document.addEventListener('input', e => {
-  if (e.target.id==='q'){ S.q=e.target.value; render(); }
+  if (e.target.id==='q'){ S.q=e.target.value; render(); return; }
+  const f = e.target.closest?.('form[data-form=item]'); if (!f) return;
+  delete e.target.dataset.auto;                       // you typed it, so it's yours
+  if (e.target.name==='image_url') updatePreview(f);
+});
+document.addEventListener('paste', e => {
+  if (e.target.name==='url' && e.target.closest('form[data-form=item]')) setTimeout(()=>lookupProduct(e.target.form, false), 0);
+});
+document.addEventListener('keydown', e => {
+  if (e.key==='Enter' && e.target.name==='url' && e.target.closest('form[data-form=item]')) { e.preventDefault(); lookupProduct(e.target.form, true); }
+});
+document.addEventListener('focusout', e => {
+  if (e.target.name==='url' && e.target.closest('form[data-form=item]')) lookupProduct(e.target.form, false);
 });
 
 document.addEventListener('submit', e => {
@@ -869,10 +991,11 @@ document.addEventListener('submit', e => {
                  : sb.from('items').insert({ ...row, household_id:S.hhId, owner_id:S.me }).select().single();
     const { data, error } = await q; done();
     if (error) return toast(friendly(error));
+    S.skipDraft = true;
     if (id){ S.items = S.items.map(x=>x.id===id?data:x); S.editing=null; toast('Saved'); }
     else { S.items.unshift(data); toast('Added to your list'); }
     render();
-    if (!id && S.addOpen) $('[data-form=item] [name=title]')?.focus();
+    if (!id && S.addOpen) $('[data-form=item] [name=url]')?.focus();
   })();
 
   if (f.dataset.form==='note') return (async()=>{
@@ -880,7 +1003,7 @@ document.addEventListener('submit', e => {
     if (!body) return done();
     const { data, error } = await sb.from('comments').insert({ item_id, body, author_id:S.me }).select().single(); done();
     if (error) return toast(friendly(error));
-    (S.comments[item_id] ||= []).push(data); render();
+    (S.comments[item_id] ||= []).push(data); S.skipDraft = true; render();
     document.querySelector(`[data-form=note][data-id="${item_id}"] input`)?.focus();
   })();
 
