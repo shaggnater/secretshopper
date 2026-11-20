@@ -213,6 +213,47 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .show-m{display:none}
 
+  /* ---------- Bonus Gift / Secret Santa ---------- */
+  .santa-tab{color:var(--amber)!important;font-weight:700}
+  .santa-hero{margin:18px 20px 4px;padding:22px;border-radius:14px;text-align:center;
+    background:radial-gradient(500px 200px at 0% 0%,rgba(249,115,22,.35),transparent 70%),linear-gradient(135deg,#3b1f66,#1d1629);border:1px solid #5b3a96}
+  .santa-hero .big{font-size:22px;font-weight:700;margin-bottom:6px}
+  .santa-hero .big b{color:var(--orange2);font-size:28px}
+  .santa-hero .tally{margin-top:10px;font-size:13px;color:var(--muted)}
+  .santa-sec{padding:16px 20px;border-bottom:1px solid var(--line)}
+  .santa-sec:last-child{border-bottom:0}
+  .santa-sec h3{margin:0 0 10px;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .muted{color:var(--muted);font-size:13px;margin:8px 0 0}
+  .vote-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
+  .vote{background:var(--card2);border:2px solid var(--line);border-radius:10px;padding:12px 0;font-size:18px;font-weight:800;cursor:pointer;color:var(--text)}
+  .vote:hover{border-color:var(--purple)}
+  .vote.on{background:var(--orange);border-color:var(--orange);color:#1a0f05}
+  .vote-other{display:flex;gap:8px;margin-top:10px;max-width:320px}
+  .count-badge{font-size:12px;background:var(--card2);border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--muted)}
+  .count-badge.ok{background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.5);color:#86efac}
+  .idea{display:grid;grid-template-columns:72px 1fr auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid #241b34}
+  .idea .info h2{font-size:15px}
+  .idea-act{display:flex;gap:6px}
+  .b-over{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.4)}
+  .santa .addbox{margin-top:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--card2);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:13.5px;font-weight:600}
+  .chip small{color:var(--muted);font-weight:400}
+  .chip.ok{border-color:rgba(34,197,94,.5);color:#86efac}
+  .spinbox{text-align:center;padding:10px 0}
+  .btn-big{font-size:20px;padding:14px 34px}
+  .btn-big:disabled{background:var(--card2);color:var(--dim);border-color:var(--line)}
+  .reel{font-size:30px;font-weight:800;color:var(--orange2);min-height:46px;padding:12px;border:2px dashed var(--purple);border-radius:14px;max-width:340px;margin:0 auto}
+  .rolling .reel{animation:pulse .3s ease-in-out infinite alternate}
+  @keyframes pulse{from{transform:scale(.97)}to{transform:scale(1.03)}}
+  .match{border:2px solid var(--orange);border-radius:16px;padding:18px;background:linear-gradient(160deg,#2a1747,#1d1629);animation:pop .4s ease-out}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
+  .match-top{color:var(--muted);font-weight:600;text-align:center}
+  .match-name{display:flex;gap:10px;align-items:center;justify-content:center;font-size:28px;font-weight:800;margin:8px 0 14px}
+  .match-item{display:grid;grid-template-columns:120px 1fr;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .match-foot{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
+  .admin-sec{background:#140f1e}
+
   /* ================= PHONE LAYOUT ================= */
   @media (max-width:760px){
     .hide-m{display:none!important}
@@ -278,6 +319,16 @@
     .msg span{flex-basis:100%;order:3}
 
     .summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+    .santa-hero{margin:12px 12px 4px;padding:16px}
+    .santa-hero .big{font-size:18px}
+    .santa-hero .big b{font-size:23px}
+    .santa-sec{padding:14px 12px}
+    .vote-grid{grid-template-columns:repeat(3,1fr)}
+    .idea{grid-template-columns:56px 1fr}
+    .idea-act{grid-column:1/-1}
+    .idea-act .btn{flex:1}
+    .match-item{grid-template-columns:80px 1fr}
+    .match-name{font-size:23px}
     .group-h{padding:10px 12px 4px}
     .empty{padding:36px 14px}
 
@@ -308,7 +359,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_xc6yeRW8-1Nn8ghDzJJwtA_oluVSwFI";  // 
 const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
 const sb = configured && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+const VOTE_AMOUNTS = [5, 10, 20, 25, 30, 40, 50, 75, 100];
 const S = {
+  santa:null, santaItems:[], spinning:false, showMatch:false,
   session:null, me:null,
   households:[],          // [{id,name,invite_code,role,display_name}]
   hhId: null,
@@ -371,9 +424,21 @@ async function loadHousehold(){
     sb.from('items').select('*').eq('household_id', S.hhId).order('created_at',{ascending:false}),
   ]);
   if (m.error) throw m.error; if (it.error) throw it.error;
-  S.members = m.data; S.items = it.data;
+  S.members = m.data;
+  S.items = it.data.filter(i=>!i.santa);                              // regular wish lists
+  S.santaItems = it.data.filter(i=>i.santa && i.owner_id===S.me);     // my Secret Santa ideas
   if (S.view!=='me' && S.view!=='cart' && !S.members.some(x=>x.user_id===S.view)) S.view='me';
   await loadSecrets();
+}
+
+// Bonus Gift / Secret Santa state (votes stay private; you only ever get your own match)
+async function loadSanta(){
+  if (!S.hhId) return;
+  const { data, error } = await sb.rpc('santa_state', { hh:S.hhId });
+  if (error) {
+    S.santa = { error: /santa_state|function .* does not exist|schema cache/i.test(error.message||'')
+      ? "The Bonus Gift needs a one-time database update (see README step 7)." : friendly(error) };
+  } else S.santa = data;
 }
 
 // Status + secret notes. RLS automatically strips rows for YOUR OWN items.
@@ -392,6 +457,7 @@ async function loadSecrets(){
     cm.data.forEach(r=>(comments[r.item_id] ||= []).push(r));
   }
   S.status=status; S.comments=comments;
+  await loadSanta();
 }
 
 function subscribe(){
@@ -430,7 +496,7 @@ function render(){
   // keep focus/caret in search box across re-renders
   const focused = document.activeElement?.id, caret = document.activeElement?.selectionStart;
   const drafts = S.skipDraft ? {} : snapshotForms(); S.skipDraft = false;
-  app.innerHTML = navBar() + subNav() + `<div class="wrap">${sideBar()}<main>${S.view==='cart' ? cartView() : listView()}</main></div>`;
+  app.innerHTML = navBar() + subNav() + `<div class="wrap">${sideBar()}<main>${S.view==='cart' ? cartView() : S.view==='santa' ? santaView() : listView()}</main></div>`;
   restoreForms(drafts);
   if (focused && document.getElementById(focused)) { const el=document.getElementById(focused); el.focus(); try{ el.setSelectionRange(caret,caret);}catch{} }
 }
@@ -512,6 +578,7 @@ function subNav(){
   return `<div class="subnav">
     <button class="tab ${S.view==='me'?'active':''}" data-act="view" data-v="me">★ Your List</button>
     ${others.map(m=>`<button class="tab ${S.view===m.user_id?'active':''}" data-act="view" data-v="${m.user_id}">${esc(m.display_name)}'s List</button>`).join('')}
+    <button class="tab santa-tab ${S.view==='santa'?'active':''}" data-act="view" data-v="santa">🎁 Bonus Gift</button>
     <button class="tab ${S.view==='cart'?'active':''}" data-act="view" data-v="cart">🛒 My Shopping</button>
     <button class="tab invite" data-act="invite">+ Invite family</button>
   </div>`;
@@ -531,7 +598,10 @@ function sideBar(){
       </div></div>`;
   }).join('');
   return `<aside class="side"><div class="panel">
-    <h3>Household Lists</h3><div class="side-list">${rows}</div>
+    <h3>Household Lists</h3><div class="side-list">${rows}
+      <div class="side-item ${S.view==='santa'?'active':''}" data-act="view" data-v="santa">
+        <div class="avatar" style="background:linear-gradient(135deg,#7c3aed,#f97316)">🎁</div>
+        <div class="meta"><b>Bonus Gift</b><small>Secret Santa${S.santa?.spend_limit?` · $${Number(S.santa.spend_limit)} limit`:''}</small></div></div></div>
     <div class="tip"><b>How the secret works:</b> everyone can see who's claimed or bought what — except the person whose list it is. Your own list never shows its status, so no spoilers.</div>
   </div></aside>`;
 }
@@ -619,6 +689,115 @@ function cartView(){
   </div>`;
 }
 
+/* =====================================================================
+   BONUS GIFT (Secret Santa)
+   ===================================================================== */
+function santaView(){
+  const st = S.santa;
+  const head = `<div class="list-head"><div style="display:flex;gap:14px;align-items:center">
+      <div class="avatar" style="width:54px;height:54px;font-size:26px;background:linear-gradient(135deg,#7c3aed,#f97316)">🎁</div>
+      <div><h1>Bonus Gift</h1><p>Secret Santa for ${esc(hh()?.name||'the family')}</p>
+      <span class="secret-banner">${ICON.lock} Votes and matches are private. Nobody can see who has whom.</span></div></div></div>`;
+  if (!st) return `<div class="panel">${head}<div class="spin"></div></div>`;
+  if (st.error) return `<div class="panel">${head}<div class="empty"><h3>Not quite ready</h3>${esc(st.error)}</div></div>`;
+
+  const admin = myMember()?.role==='admin';
+  const limit = st.spend_limit!=null ? money(st.spend_limit).replace('.00','') : null;
+  let body = '';
+
+  if (!st.closed){
+    // ---- 1. voting ----
+    const mine = st.my_vote!=null ? Number(st.my_vote) : null;
+    body = `<div class="santa-hero"><div class="big">This year's Secret Santa gift is <b>$ ?</b> dollars.</div>
+        <div>Please vote below on the Secret Santa spend limit.</div></div>
+      <div class="santa-sec">
+        <h3>Your vote ${mine!=null?`<span class="pill on" style="cursor:default">${money(mine).replace('.00','')}</span>`:''}</h3>
+        <div class="vote-grid">${VOTE_AMOUNTS.map(a=>`<button class="vote ${mine===a?'on':''}" data-act="santa-vote" data-v="${a}">$${a}</button>`).join('')}</div>
+        <form class="inline vote-other" data-form="santa-other"><input type="number" name="amt" min="1" max="10000" step="1" placeholder="Other amount" ${mine!=null&&!VOTE_AMOUNTS.includes(mine)?`value="${mine}"`:''}><button class="btn btn-ghost">Vote</button></form>
+        <p class="muted">${st.voted} of ${st.members} family members have voted. ${mine!=null?'You can change your vote until voting closes. ':''}The limit is set automatically once everyone has voted. Most votes wins; a tie goes to the lower amount.</p>
+        ${admin && st.voted>0 ? `<button class="link-btn" data-act="santa-close">Admin: close voting now with ${st.voted} vote${st.voted===1?'':'s'}</button>`:''}
+      </div>`;
+  } else {
+    // ---- 2. ideas ----
+    const ready = st.ready || [];
+    const waiting = ready.filter(r=>r.items<3);
+    const allReady = ready.length>0 && waiting.length===0;
+    const n = S.santaItems.length;
+    const tally = (st.tally||[]).map(t=>`${money(t.amount).replace('.00','')} <small>(${t.count})</small>`).join(' · ');
+    body = `<div class="santa-hero"><div class="big">This year's Secret Santa gift is <b>${limit}</b> dollars.</div>
+        <div>Please add 3 items within this cost range.</div>
+        ${tally?`<div class="tally">Votes: ${tally}</div>`:''}</div>
+      <div class="santa-sec">
+        <h3>Your Secret Santa ideas <span class="count-badge ${n>=3?'ok':''}">${Math.min(n,3)}/3</span></h3>
+        <p class="muted">Whoever draws your name gets one of these, picked at random. They don't show on your regular list.</p>
+        ${S.santaItems.map(i=>santaIdeaRow(i, st)).join('')}
+        ${!st.drawn && n<3 ? itemForm(null, { santa:true, limit:st.spend_limit }) : ''}
+      </div>
+      <div class="santa-sec">
+        <h3>Who's ready</h3>
+        <div class="chips">${ready.map(r=>`<span class="chip ${r.items>=3?'ok':''}">${r.items>=3?'✓':'…'} ${esc(r.user_id===S.me?'You':nameOf(r.user_id))} <small>${Math.min(r.items,3)}/3</small></span>`).join('')}</div>
+      </div>
+      <div class="santa-sec spin-sec">
+        <h3>Please click the randomizer button</h3>
+        ${spinArea(st, allReady, waiting)}
+      </div>`;
+  }
+  if (admin) body += `<div class="santa-sec admin-sec"><button class="btn btn-danger btn-sm" data-act="santa-reset">Admin: start over (clears votes, ideas and matches)</button></div>`;
+  return `<div class="panel santa">${head}${body}</div>`;
+}
+
+function santaIdeaRow(i, st){
+  const over = st.spend_limit!=null && i.price!=null && Number(i.price) > Number(st.spend_limit);
+  if (S.editing===i.id) return `<div class="idea" style="display:block">${itemForm(i, { santa:true, limit:st.spend_limit })}</div>`;
+  const url = safeUrl(i.url);
+  return `<div class="idea">${thumb(i)}
+    <div class="info"><h2>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>`:esc(i.title)}</h2>
+      <div class="from">${domain(url)?'from '+esc(domain(url)):''}</div>
+      <div class="badges">${i.price!=null?`<span class="badge b-qty">${money(i.price)}</span>`:'<span class="badge b-qty">No price</span>'}${over?`<span class="badge b-over">Over the ${money(st.spend_limit).replace('.00','')} limit</span>`:''}</div></div>
+    ${st.drawn?'':`<div class="idea-act"><button class="btn btn-ghost btn-sm" data-act="edit" data-id="${i.id}">Edit</button><button class="btn btn-danger btn-sm" data-act="del" data-id="${i.id}">Delete</button></div>`}
+  </div>`;
+}
+
+function spinArea(st, allReady, waiting){
+  if (S.spinning) return `<div class="spinbox rolling"><div class="reel" id="reel">🎲</div><div class="muted">Shuffling names…</div></div>`;
+  if (st.mine){
+    const it = st.mine.item;
+    if (!S.showMatch) return `<div class="spinbox"><p>You've already spun. Your match is hidden so nobody can peek over your shoulder.</p>
+      <button class="btn btn-purple" data-act="santa-show">👀 Show my match</button><p class="muted">${st.spun} of ${st.participants} have spun.</p></div>`;
+    return `<div class="match">
+      <div class="match-top">🎅 You're the Secret Santa for</div>
+      <div class="match-name">${avatar(st.mine.recipient, nameOf(st.mine.recipient), 44)} ${esc(nameOf(st.mine.recipient))}</div>
+      ${it ? `<div class="match-item">${thumb(it)}<div class="info"><div class="muted" style="margin:0">Your gift to get:</div>
+          <h2>${safeUrl(it.url)?`<a href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>`:esc(it.title)}</h2>
+          ${it.price!=null?priceHtml(it.price):''}${it.notes?`<div class="notes">${esc(it.notes)}</div>`:''}</div></div>`
+        : `<p class="muted">The idea picked for you was deleted. Pick anything from their ideas within the limit, or ask an admin to start over.</p>`}
+      <div class="match-foot">🤫 Only you can see this. ${st.spun} of ${st.participants} have spun. <button class="link-btn" data-act="santa-hide">Hide</button></div>
+    </div>`;
+  }
+  if (st.drawn && !st.in_draw) return `<div class="spinbox"><p>The names were drawn before you joined, so you're not in this year's Secret Santa.</p></div>`;
+  if (!allReady){
+    const names = waiting.map(r=>r.user_id===S.me?'you':nameOf(r.user_id));
+    const list = names.length>1 ? names.slice(0,-1).join(', ')+' and '+names.at(-1) : names[0];
+    return `<div class="spinbox locked"><button class="btn btn-big" disabled>🔒 Randomizer</button>
+      <p class="muted">Unlocks once everyone has added 3 ideas. Waiting on <b>${esc(list)}</b>.</p></div>`;
+  }
+  return `<div class="spinbox"><button class="btn btn-big btn-orange" data-act="santa-spin">🎲 Randomizer</button>
+    <p class="muted">${st.drawn?`${st.spun} of ${st.participants} have spun. `:''}Everyone's ready! Spin to find out who you're buying for.</p></div>`;
+}
+
+async function doSpin(){
+  if (S.spinning) return;
+  S.spinning = true; render();
+  const others = S.members.map(m=>m.display_name);
+  let k = 0; const tick = setInterval(()=>{ const r=$('#reel'); if (r) r.textContent = others[k++ % others.length]; }, 90);
+  const started = Date.now();
+  const { error } = await sb.rpc('santa_spin', { hh:S.hhId });
+  await new Promise(r=>setTimeout(r, Math.max(0, 2200-(Date.now()-started))));
+  clearInterval(tick); S.spinning = false;
+  if (error){ await loadSanta(); render(); throw error; }
+  await loadSanta(); S.showMatch = true; render(); toast('🎅 Ho ho ho!');
+}
+
 function emptyState(own, hasAny){
   if (hasAny) return `<div class="empty"><h3>Nothing matches that filter</h3></div>`;
   return own
@@ -686,10 +865,11 @@ function threadHtml(i, notes){
   </div>`;
 }
 
-function itemForm(i){
+function itemForm(i, opt={}){
   const e = i||{};
   const img = safeUrl(e.image_url);
-  return `<form class="addbox" data-form="item" ${i?`data-id="${i.id}"`:''} style="${i?'border:0;padding:0;background:none':''}">
+  const lim = opt.limit!=null ? money(opt.limit).replace('.00','') : null;
+  return `<form class="addbox" data-form="item" ${i?`data-id="${i.id}"`:''} ${opt.santa?'data-santa="1"':''} style="${i||opt.santa?'border:0;padding:0;background:none':''}">
     <div class="lookup">
       <label>Paste a link from any store — we'll fill in the rest</label>
       <div class="inline"><input type="url" name="url" value="${esc(e.url)}" placeholder="https://www.amazon.com/…" autocomplete="off">
@@ -701,16 +881,16 @@ function itemForm(i){
       <div class="addgrid">
         <div class="full"><label>Item name *</label><input type="text" name="title" required maxlength="200" value="${esc(e.title)}" placeholder="Filled in from the link, or type it yourself"></div>
         <div class="half"><label>Picture link</label><input type="url" name="image_url" value="${esc(e.image_url)}" placeholder="Filled in from the link"></div>
-        <div><label>Price</label><input type="number" name="price" min="0" step="0.01" value="${e.price??''}" placeholder="0.00"></div>
+        <div><label>Price${lim?` (up to ${lim})`:''}</label><input type="number" name="price" min="0" step="0.01" value="${e.price??''}" placeholder="0.00"></div>
         <div><label>Qty</label><input type="number" name="qty" min="1" max="99" value="${e.qty||1}"></div>
         <div class="full"><label>Description & notes (size, color, “any brand is fine”…)</label><textarea name="notes" maxlength="500">${esc(e.notes)}</textarea></div>
       </div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <label class="check"><input type="checkbox" name="priority" ${e.priority?'checked':''}> ★ This is a must-have</label>
+      ${opt.santa?'<span></span>':`<label class="check"><input type="checkbox" name="priority" ${e.priority?'checked':''}> ★ This is a must-have</label>`}
       <div style="display:flex;gap:8px;margin-top:12px">
         ${i?`<button type="button" class="btn btn-ghost" data-act="canceledit">Cancel</button>`:''}
-        <button class="btn btn-orange">${i?'Save changes':'Add to my list'}</button>
+        <button class="btn btn-orange">${i?'Save changes':opt.santa?'Add Secret Santa idea':'Add to my list'}</button>
       </div>
     </div>
   </form>`;
@@ -861,18 +1041,37 @@ document.addEventListener('click', e => {
         if (error) throw error; $('#autherr').className='ok'; $('#autherr').textContent='Check your email for a reset link.'; break;
       }
       case 'signout': closeModal(); await sb.auth.signOut(); break;
-      case 'view': S.view=v; S.q=''; S.filter='all'; S.addOpen=false; S.editing=null; render(); window.scrollTo({top:0}); break;
+      case 'view': S.view=v; S.q=''; S.filter='all'; S.addOpen=false; S.editing=null; S.showMatch=false; render(); window.scrollTo({top:0});
+        if (v==='santa'){ await loadSanta(); render(); } break;
       case 'filter': S.filter=v; render(); break;
       case 'clearq': S.q=''; render(); break;
       case 'toggleadd': S.addOpen=!S.addOpen; S.view='me'; render(); if(S.addOpen) $('[data-form=item] [name=url]')?.focus(); break;
       case 'lookup': await lookupProduct(el.closest('form'), true); break;
       case 'edit': S.editing=id; render(); break;
+      case 'santa-vote': {
+        const { error } = await sb.rpc('santa_vote', { hh:S.hhId, p_amount:Number(v) }); if (error) throw error;
+        await loadSanta(); render(); toast(S.santa?.closed ? `Voting's done! The limit is ${money(S.santa.spend_limit).replace('.00','')}` : `Voted $${v}`); break;
+      }
+      case 'santa-close': {
+        if (!await ask('Close voting now? The amount with the most votes so far becomes the limit.', 'Close voting')) break;
+        const { error } = await sb.rpc('santa_close_voting', { hh:S.hhId }); if (error) throw error;
+        await loadSanta(); render(); break;
+      }
+      case 'santa-spin': await doSpin(); break;
+      case 'santa-show': S.showMatch=true; render(); break;
+      case 'santa-hide': S.showMatch=false; render(); break;
+      case 'santa-reset': {
+        if (!await ask("Start Secret Santa over? This clears everyone's votes, Secret Santa ideas and matches. Regular wish lists aren't touched.", 'Start over')) break;
+        const { error } = await sb.rpc('santa_reset', { hh:S.hhId }); if (error) throw error;
+        S.showMatch=false; await loadHousehold(); render(); toast('Secret Santa reset'); break;
+      }
       case 'canceledit': S.editing=null; render(); break;
       case 'del': {
-        const it=S.items.find(x=>x.id===id);
+        const it=S.items.find(x=>x.id===id) || S.santaItems.find(x=>x.id===id);
         if (!await ask(`Remove “${it.title}” from your list?`)) break;
         const { error } = await sb.from('items').delete().eq('id', id); if (error) throw error;
-        S.items=S.items.filter(x=>x.id!==id); render(); toast('Removed'); break;
+        S.items=S.items.filter(x=>x.id!==id); S.santaItems=S.santaItems.filter(x=>x.id!==id);
+        if (it.santa) await loadSanta(); render(); toast('Removed'); break;
       }
       case 'claim': case 'buy': {
         const status = a==='claim'?'claimed':'purchased';
@@ -987,12 +1186,15 @@ document.addEventListener('submit', e => {
       notes: fd.get('notes').trim() || null,
       priority: fd.get('priority')==='on',
     };
+    const santa = f.dataset.santa==='1';
+    if (santa && !id && S.santaItems.length>=3) { done(); return toast('You already have 3 Secret Santa ideas.'); }
     const q = id ? sb.from('items').update(row).eq('id',id).select().single()
-                 : sb.from('items').insert({ ...row, household_id:S.hhId, owner_id:S.me }).select().single();
+                 : sb.from('items').insert({ ...row, santa, household_id:S.hhId, owner_id:S.me }).select().single();
     const { data, error } = await q; done();
     if (error) return toast(friendly(error));
     S.skipDraft = true;
-    if (id){ S.items = S.items.map(x=>x.id===id?data:x); S.editing=null; toast('Saved'); }
+    if (id){ S.items = S.items.map(x=>x.id===id?data:x); S.santaItems = S.santaItems.map(x=>x.id===id?data:x); S.editing=null; toast('Saved'); }
+    else if (santa) { S.santaItems.push(data); await loadSanta(); toast(S.santaItems.length>=3 ? "That's all 3 — you're ready!" : 'Idea added'); }
     else { S.items.unshift(data); toast('Added to your list'); }
     render();
     if (!id && S.addOpen) $('[data-form=item] [name=url]')?.focus();
@@ -1005,6 +1207,14 @@ document.addEventListener('submit', e => {
     if (error) return toast(friendly(error));
     (S.comments[item_id] ||= []).push(data); S.skipDraft = true; render();
     document.querySelector(`[data-form=note][data-id="${item_id}"] input`)?.focus();
+  })();
+
+  if (f.dataset.form==='santa-other') return (async()=>{
+    const amt = Number(fd.get('amt')); done();
+    if (!(amt>0)) return toast('Type an amount first');
+    const { error } = await sb.rpc('santa_vote', { hh:S.hhId, p_amount:amt });
+    if (error) return toast(friendly(error));
+    S.skipDraft = true; await loadSanta(); render(); toast(`Voted $${amt}`);
   })();
 
   if (f.id==='nameform') return (async()=>{

@@ -9,6 +9,7 @@ Live site: https://shaggnater.github.io/secretshopper/
 | `index.html` | The whole website, hosted by GitHub Pages |
 | `schema.sql` | Database tables and the secrecy rules. Run it once in Supabase. |
 | `supabase/functions/fetch-product/index.ts` | Reads a store link and fills in the name, photo, price and description |
+| `supabase/migrations/002_secret_santa.sql` | Adds the Bonus Gift (Secret Santa) tab. Run it once in Supabase. |
 
 ## Setup
 
@@ -45,6 +46,15 @@ This runs on Supabase, because browsers can't read other stores' pages directly.
 4. Leave **Verify JWT** on (the default), so only signed-in family members can use it.
 
 Now when you paste a link in **+ Add an item**, the name, photo, price and a short description fill in automatically. Every field stays editable. If a store blocks the lookup (Amazon sometimes does), or a detail can't be found, the app says so and you type that part in. The lookup never overwrites anything you've already typed, unless you click **Get details** yourself.
+
+### 7. Bonus Gift (Secret Santa)
+In Supabase, open **SQL Editor → New query**, paste in all of `supabase/migrations/002_secret_santa.sql`, and click **Run**. It only adds new pieces, so existing lists aren't touched, and it's safe to run more than once.
+
+How the tab works:
+1. **Vote:** everyone picks a spend limit ($5 to $100, or their own amount). Votes are private. When the last person votes, the amount with the most votes becomes the limit, and a tie goes to the lower amount. An admin can close voting early.
+2. **Add 3 ideas:** everyone adds 3 Secret Santa ideas within the limit. These don't show on regular lists.
+3. **Randomizer:** it stays locked until every member has 3 ideas. The first spin pairs everyone up: each person gives one gift and gets one, and nobody gets themselves. Each spin then reveals only your own match, with one of that person's ideas picked at random. Nobody else, not even an admin, can see who has whom in the app.
+4. **Next year:** an admin clicks **Start over**, which clears the votes, ideas and matches.
 
 ## How the secret is kept
 Supabase Row Level Security does the hiding inside the database. The `item_status` and `comments` tables return nothing to the owner of an item, even if someone pokes at the API directly. Your own list shows "Status hidden from you" because the server never sends your list's status at all.
