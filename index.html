@@ -115,7 +115,6 @@
   /* ---------- item rows ---------- */
   .row{display:grid;grid-template-columns:150px 1fr 230px;gap:18px;padding:18px 20px;border-bottom:1px solid var(--line)}
   .row:last-child{border-bottom:0}
-  @media(max-width:700px){.row{grid-template-columns:90px 1fr}.row .act{grid-column:1/-1}}
   .thumb{width:100%;aspect-ratio:1;border-radius:8px;background:#fff;display:grid;place-items:center;overflow:hidden}
   .thumb img{width:100%;height:100%;object-fit:contain}
   .thumb.ph{background:linear-gradient(135deg,#2c1f45,#1a1228);color:var(--purple2)}
@@ -200,6 +199,80 @@
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card2);border:1px solid var(--orange);padding:10px 18px;border-radius:99px;z-index:60;font-size:14px;box-shadow:0 10px 30px #000a}
   .spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:sp 1s linear infinite;margin:40px auto}
   @keyframes sp{to{transform:rotate(360deg)}}
+  .show-m{display:none}
+
+  /* ================= PHONE LAYOUT ================= */
+  @media (max-width:760px){
+    .hide-m{display:none!important}
+    .show-m{display:block}
+    /* stop iOS zooming into inputs */
+    input[type=text],input[type=email],input[type=password],input[type=url],input[type=number],select,textarea{font-size:16px}
+
+    /* top bar: row 1 = logo · household · account · cart, row 2 = search */
+    .nav{flex-wrap:wrap;gap:8px 6px;padding:8px 10px}
+    .logo{font-size:18px;padding:2px;gap:5px}
+    .logo svg{width:24px;height:24px}
+    .nav-block.hh{min-width:0;flex:1;padding:2px 4px}
+    .nav-block.hh select{max-width:100%;font-size:14px;text-overflow:ellipsis}
+    .nav-right{margin-left:0;gap:2px}
+    .nav-block.acct{padding:2px}
+    .nav{position:static}
+    .cart{padding:2px 4px;position:relative}
+    .cart svg{width:32px;height:27px}
+    .cart .count{position:absolute;top:-3px;right:-2px;left:auto;margin:0;font-size:11.5px;line-height:1;background:var(--orange);color:#1a0f05;border-radius:99px;padding:3px 6px}
+    .search{order:5;flex:1 0 100%;max-width:none}
+    .search input{padding:8px 10px}
+
+    .subnav{padding:4px 6px;position:sticky;top:0;z-index:15}
+    .tab{font-size:13.5px;padding:6px 9px}
+    .tab.invite{margin-left:4px}
+
+    .wrap{display:block;padding:10px 8px 40px}
+    .side{display:none}
+    .panel{border-radius:8px}
+
+    .list-head{padding:14px 12px;gap:10px}
+    .list-head h1{font-size:19px}
+    .list-head p{font-size:12.5px}
+    .list-head .avatar{width:42px!important;height:42px!important;font-size:16px!important}
+    .list-head > .btn{width:100%}
+    .secret-banner{font-size:11.5px;padding:3px 9px}
+    .toolbar{padding:10px 12px;gap:6px}
+    .pill{padding:5px 10px;font-size:12.5px}
+    .toolbar select{flex:1 0 100%;margin-left:0}
+
+    .addbox{padding:12px}
+    .addgrid{grid-template-columns:1fr 1fr}
+    .addgrid .half{grid-column:1/-1}
+
+    /* item rows: small thumb beside text, actions in a compact row underneath */
+    .row{grid-template-columns:76px 1fr;gap:10px 12px;padding:14px 12px}
+    .thumb.ph span{font-size:28px}
+    .thumb.ph img{width:30px;height:30px}
+    .info h2{font-size:15.5px}
+    .price{font-size:19px;margin-top:4px}
+    .notes{font-size:13px;margin-top:5px}
+    .added{margin-top:4px}
+    .row .act{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;gap:8px}
+    .act .status{flex:1 0 100%;padding:6px 10px}
+    .act .btn{flex:1 1 0;min-height:40px}
+    .act .link-btn{flex:1 0 100%;padding:4px 0}
+    .thread{grid-column:1/-1;margin-top:0}
+    .msg{flex-wrap:wrap}
+    .msg span{flex-basis:100%;order:3}
+
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+    .group-h{padding:10px 12px 4px}
+    .empty{padding:36px 14px}
+
+    .modal-bg{padding:0;place-items:end stretch}
+    .modal{max-width:none!important;max-height:92vh;border-radius:16px 16px 0 0}
+    .modal section .inline{flex-wrap:wrap}
+    .modal section .inline .btn{flex:1}
+    .center{padding:16px 10px}
+    .card{padding:20px 16px}
+    .toast{width:max-content;max-width:calc(100% - 24px);text-align:center;border-radius:12px}
+  }
 </style>
 </head>
 <body>
@@ -407,11 +480,11 @@ function navBar(){
     + `<option value="__new">+ Join / create another…</option>`;
   return `<nav class="nav">
     <div class="logo" data-act="view" data-v="me">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
-    <div class="nav-block"><small>Household</small><select id="hhsel">${opts}</select></div>
-    <form class="search" id="searchform"><input id="q" type="text" placeholder="Search all lists in ${esc(hh()?.name||'')}" value="${esc(S.q)}" autocomplete="off"><button aria-label="Search">${ICON.search}</button></form>
+    <div class="nav-block hh"><small class="hide-m">Household</small><select id="hhsel">${opts}</select></div>
+    <form class="search" id="searchform"><input id="q" type="text" placeholder="Search all lists" value="${esc(S.q)}" autocomplete="off"><button aria-label="Search">${ICON.search}</button></form>
     <div class="nav-right">
-      <div class="nav-block" data-act="settings"><small>Hello, ${esc(me?.display_name||'there')}</small><b>Account & Household ▾</b></div>
-      <div class="nav-block cart" data-act="view" data-v="cart" title="Things I'm getting">${ICON.cart}<span class="count">${myClaims().length}</span><b>My Shopping</b></div>
+      <div class="nav-block acct" data-act="settings" title="Account & Household"><small class="hide-m">Hello, ${esc(me?.display_name||'there')}</small><b class="hide-m">Account & Household ▾</b><span class="show-m">${avatar(S.me, me?.display_name, 32)}</span></div>
+      <div class="nav-block cart" data-act="view" data-v="cart" title="Things I'm getting">${ICON.cart}<span class="count">${myClaims().length}</span><b class="hide-m">My Shopping</b></div>
     </div>
   </nav>`;
 }
