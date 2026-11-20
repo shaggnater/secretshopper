@@ -145,8 +145,14 @@ export function extract(html, pageUrl) {
   const amz = /amazon\./i.test(host) ? amazon(html) : {};
   const titleTag = decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]);
 
-  let title = amz.title || ld.title || meta["og:title"] || meta["twitter:title"] || titleTag;
-  title = cleanTitle(title, host, title === titleTag);
+  const h1 = decode(html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, " "));
+  const metaName = meta["og:title"] || meta["twitter:title"] || meta["name"] || meta["title"];
+  let title = amz.title || ld.title || metaName;
+  if (!title && h1 && h1.length >= 4 && h1.length <= 200) title = h1;
+  let fromTag = false;
+  if (!title && titleTag) { title = titleTag; fromTag = true; }
+  title = cleanTitle(title, host, fromTag);
+  if (title && /^(amazon(\.com)?|robot check|access denied|page not found|404.*|sorry.*|just a moment.*)$/i.test(title)) title = null;
 
   let image = amz.image || ld.image || meta["og:image"] || meta["og:image:secure_url"] ||
               meta["twitter:image"] || meta["twitter:image:src"] || meta["image"];
@@ -161,8 +167,26 @@ export function extract(html, pageUrl) {
   if (description) description = description.length > 220 ? description.slice(0, 217).replace(/\s+\S*$/, "") + "…" : description;
 
   const blocked = /robot check|captcha|access denied|are you a human|pardon our interruption|request blocked/i.test(titleTag || "") && !ld.title && !amz.title;
-  return { title: blocked ? null : (title || null), image: blocked ? null : (image || null), price: blocked ? null : price,
+  if (blocked) title = null;
+  return { title: title || null, image: blocked ? null : (image || null), price: blocked ? null : price,
            description: blocked ? null : description, site: host, blocked };
+}
+
+// "amazon.com/Lodge-Cast-Iron-Skillet-12/dp/B00…" → "Lodge Cast Iron Skillet 12"
+export function titleFromUrl(pageUrl) {
+  try {
+    const u = new URL(pageUrl);
+    const skip = /^(dp|gp|p|ip|product|products|site|item|items|shop|buy|en|us|en-us|s|pd|prd|detail|details|catalog)$/i;
+    const segs = u.pathname.split("/").map((x) => decodeURIComponent(x))
+      .filter((x) => x && !skip.test(x) && /[a-z]{3}/i.test(x) && /[-_+ ]/.test(x) && !/^[A-Z0-9]{8,}$/.test(x));
+    if (!segs.length) return null;
+    let best = segs.sort((a, b) => b.length - a.length)[0]
+      .replace(/\.(html?|aspx?|php)$/i, "").replace(/[-_+]+/g, " ")
+      .replace(/\b(A|N|P)-?\d{6,}\b/gi, "").replace(/\b\d{6,}\b/g, "").replace(/\s+/g, " ").trim()
+      .replace(/(\w) s\b/g, "$1's");
+    if (best.length < 4) return null;
+    return best.replace(/(^|\s)([a-z])/g, (_, sp, c) => sp + c.toUpperCase());
+  } catch { return null; }
 }
 
 function isPrivateHost(h) {
@@ -188,36 +212,62 @@ async function readCapped(res) {
   return new TextDecoder("utf-8").decode(buf);
 }
 
-const json = (body) => new Response(JSON.stringify(body), { headers: { ...CORS, "Content-Type": "application/json" } });
+const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
 
-async function handle(req) {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+async function fetchPage(href, ua) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
-    const { url } = await req.json();
-    const u = new URL(String(url || "").trim());
-    if (!/^https?:$/.test(u.protocol) || isPrivateHost(u.hostname)) return json({ ok: false, error: "That doesn't look like a store link." });
-
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
-    const res = await fetch(u.href, {
+    const res = await fetch(href, {
       redirect: "follow", signal: ctrl.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
     });
-    clearTimeout(timer);
-    const finalUrl = res.url || u.href;
+    const html = await readCapped(res);
+    return { res, html };
+  } finally { clearTimeout(timer); }
+}
+
+const json = (body) => new Response(JSON.stringify(body), { headers: { ...CORS, "Content-Type": "application/json" } });
+
+async function handle(req) {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  let rawUrl = "";
+  try { rawUrl = String((await req.json())?.url || "").trim(); } catch { /* no body */ }
+  try {
+    const u = new URL(rawUrl);
+    if (!/^https?:$/.test(u.protocol) || isPrivateHost(u.hostname)) return json({ ok: false, error: "That doesn't look like a store link." });
+
+    let { res, html } = await fetchPage(u.href, DESKTOP_UA);
+    let finalUrl = res.url || u.href;
     if (isPrivateHost(new URL(finalUrl).hostname)) return json({ ok: false, error: "That doesn't look like a store link." });
     if (!/html|xml/i.test(res.headers.get("content-type") || "html")) return json({ ok: false, error: "That link isn't a web page." });
 
-    const html = await readCapped(res);
-    const data = extract(html, finalUrl);
+    let data = extract(html, finalUrl);
+    if (data.blocked || res.status >= 500 || res.status === 403 || !(data.title || data.image || data.price)) {
+      try {   // one retry as a phone browser — some stores block one but not the other
+        const second = await fetchPage(finalUrl, MOBILE_UA);
+        const d2 = extract(second.html, second.res.url || finalUrl);
+        const score = (d) => (d.title ? 1 : 0) + (d.image ? 1 : 0) + (d.price != null ? 1 : 0);
+        if (score(d2) > score(data)) { data = d2; res = second.res; finalUrl = second.res.url || finalUrl; }
+      } catch { /* keep first result */ }
+    }
+    if (!data.title) data.title = titleFromUrl(finalUrl) || titleFromUrl(u.href);
     const ok = !!(data.title || data.image || data.price);
+    console.log(JSON.stringify({ host: data.site, status: res.status, blocked: data.blocked,
+      found: { name: !!data.title, photo: !!data.image, price: data.price != null, description: !!data.description } }));
     return json({ ok, ...data, url: finalUrl, status: res.status,
       error: ok ? null : (data.blocked || res.status >= 400 ? "That store blocked the lookup." : "Couldn't find product details on that page.") });
   } catch (e) {
+    let title = null;
+    title = titleFromUrl(rawUrl);
+    console.log(JSON.stringify({ error: String(e?.message || e), nameFromLink: !!title }));
+    if (title) return json({ ok: true, title, image: null, price: null, description: null,
+      note: e?.name === "AbortError" ? "The store took too long to answer." : "Couldn't read that page." });
     return json({ ok: false, error: e?.name === "AbortError" ? "The store took too long to answer." : "Couldn't read that link." });
   }
 }
