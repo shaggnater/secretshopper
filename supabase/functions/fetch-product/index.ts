@@ -117,14 +117,61 @@ function amazon(html) {
              html.match(/id=["']landingImage["'][^>]*src=["'](https:[^"']+)["']/i) ||
              html.match(/"large":"(https:[^"]+)"/);
   if (hi) out.image = hi[1];
-  const pa = html.match(/"priceAmount":\s*([\d.]+)/) ||
-             html.match(/id=["']corePrice[\s\S]{0,600}?class=["']a-offscreen["'][^>]*>\s*\$?([\d,]+\.\d{2})/i) ||
-             html.match(/class=["']a-offscreen["'][^>]*>\s*\$([\d,]+\.\d{2})/i);
-  if (pa) out.price = parsePrice(pa[1]);
+  const pr = amazonPrice(html);
+  out.price = pr.price; out.priceSource = pr.source;
   const bullets = [...html.matchAll(/<li[^>]*>\s*<span class=["']a-list-item["'][^>]*>([\s\S]*?)<\/span>/gi)]
     .map((m) => decode(m[1].replace(/<[^>]+>/g, ""))).filter((s) => s && s.length > 20);
   if (bullets.length) out.description = bullets[0];
   return out;
+}
+
+// Amazon price: the price you'd actually pay, preferring a Prime-member / deal price
+// over the regular price. (The lookup sees Amazon logged out, so a Prime-exclusive
+// deal shows up only as a "Prime members pay $X" message, not as the main price.)
+export function amazonPrice(html) {
+  const MONEY = /\$\s?([\d,]+\.\d{2})/;
+  const markers = ["corePriceDisplay_desktop_feature_div", "corePrice_desktop", "corePrice_feature_div",
+                   "apex_desktop", "corePriceDisplay_mobile_feature_div", "corePrice_mobile_feature_div", "apex_offerDisplay_mobile", "apex_mobile"];
+  let start = -1;
+  for (const m of markers) { const i = html.indexOf(`id="${m}"`); if (i >= 0 && (start < 0 || i < start)) start = i; }
+  const region = start >= 0 ? html.slice(start, start + 20000) : html;   // unknown layout: scan the page
+
+  // the main "price to pay" in the buy box
+  let p2p = null;
+  const p2pm = region.match(/class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][\s\S]{0,300}?class=["']a-offscreen["'][^>]*>\s*([^<]+)</i);
+  if (p2pm) p2p = parsePrice(p2pm[1].match(MONEY)?.[1] ?? p2pm[1]);
+
+  // first ordinary price in the buy box that isn't crossed out, a saving, or a monthly payment
+  let firstPlain = null;
+  for (const m of region.matchAll(/class=["']a-offscreen["'][^>]*>\s*([^<]+)</gi)) {
+    const before = region.slice(Math.max(0, m.index - 400), m.index);
+    const open = before.lastIndexOf('<span class="a-price');
+    const wrapper = open >= 0 ? before.slice(open, before.indexOf(">", open) + 1) : "";
+    if (/data-a-strike|a-text-price/i.test(wrapper)) continue;                       // crossed-out list price
+    const lead = before.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(-60);
+    if (/you save|savings|list price|typical price|was:?\s*$/i.test(lead)) continue;
+    const after = region.slice(m.index, m.index + 200).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 40);
+    if (/\/\s?mo\b|per month|monthly/i.test(after)) continue;
+    const v = parsePrice(m[1].match(MONEY)?.[1]); if (v) { firstPlain = v; break; }
+  }
+
+  // Prime-member / Prime-exclusive price messages anywhere on the page
+  const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+                   .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ");
+  const primeRe = /(prime\s+(?:exclusive\s+|member\s+)*(?:price|deal|discount)|prime\s+members?\b|join\s+prime\s+to\s+(?:buy|get|save)|with\s+(?:a\s+)?prime\b|exclusive\s+prime\s+price)[^$]{0,140}\$\s?([\d,]+\.\d{2})|\$\s?([\d,]+\.\d{2})\s*(?:with\s+prime|for\s+prime\s+members|exclusive\s+prime\s+price)/gi;
+  const primes = [];
+  for (const m of text.matchAll(primeRe)) {
+    const ctx = text.slice(Math.max(0, m.index - 30), m.index + m[0].length) + text.slice(m.index + m[0].length, m.index + m[0].length + 8);
+    if (/\/\s?mo\b|per month|shipping|delivery|orders over|free trial|membership|\/year|annual/i.test(ctx)) continue;
+    const v = parsePrice(m[2] ?? m[3]); if (v) primes.push(v);
+  }
+
+  const json = parsePrice(html.match(/"priceAmount":\s*([\d.]+)/)?.[1]);
+  const base = p2p ?? firstPlain ?? json ?? null;
+  const primeBest = primes.filter((v) => !base || (v < base && v >= base * 0.3)).sort((a, b) => a - b)[0];
+  if (primeBest) return { price: primeBest, source: "prime" };
+  if (base) return { price: base, source: p2p ? "priceToPay" : firstPlain ? "buybox" : "json" };
+  return { price: null, source: null };
 }
 
 function cleanTitle(t, site, isTitleTag) {
@@ -169,7 +216,8 @@ export function extract(html, pageUrl) {
   const blocked = /robot check|captcha|access denied|are you a human|pardon our interruption|request blocked/i.test(titleTag || "") && !ld.title && !amz.title;
   if (blocked) title = null;
   return { title: title || null, image: blocked ? null : (image || null), price: blocked ? null : price,
-           description: blocked ? null : description, site: host, blocked };
+           description: blocked ? null : description, site: host, blocked,
+           priceSource: amz.price != null ? amz.priceSource : (ld.price != null ? "jsonld" : (price != null ? "meta" : null)) };
 }
 
 // "amazon.com/Lodge-Cast-Iron-Skillet-12/dp/B00…" → "Lodge Cast Iron Skillet 12"
@@ -259,7 +307,8 @@ async function handle(req) {
     if (!data.title) data.title = titleFromUrl(finalUrl) || titleFromUrl(u.href);
     const ok = !!(data.title || data.image || data.price);
     console.log(JSON.stringify({ host: data.site, status: res.status, blocked: data.blocked,
-      found: { name: !!data.title, photo: !!data.image, price: data.price != null, description: !!data.description } }));
+      found: { name: !!data.title, photo: !!data.image, price: data.price != null, description: !!data.description },
+      priceSource: data.priceSource ?? null }));
     return json({ ok, ...data, url: finalUrl, status: res.status,
       error: ok ? null : (data.blocked || res.status >= 400 ? "That store blocked the lookup." : "Couldn't find product details on that page.") });
   } catch (e) {
