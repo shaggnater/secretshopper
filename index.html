@@ -253,6 +253,16 @@
   .match-item{display:grid;grid-template-columns:120px 1fr;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
   .match-foot{text-align:center;color:var(--muted);font-size:13px;margin-top:12px}
   .admin-sec{background:#140f1e}
+  .switch-row{display:flex;gap:14px;align-items:center;justify-content:space-between;margin:0;color:var(--text);font-size:14px;cursor:pointer}
+  .switch-row small{color:var(--muted);font-weight:400}
+  .switch{appearance:none;-webkit-appearance:none;width:46px;height:26px;border-radius:99px;background:#3a2f52;position:relative;cursor:pointer;flex:none;transition:background .2s}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s}
+  .switch:checked{background:var(--orange)}
+  .switch:checked::after{left:23px}
+  .radio{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;cursor:pointer;color:var(--text);font-size:14px;font-weight:400}
+  .radio:has(input:checked){border-color:var(--orange);background:rgba(249,115,22,.08)}
+  .radio input{accent-color:var(--orange);margin-top:3px}
+  .radio small{display:block;color:var(--muted)}
 
   /* ================= PHONE LAYOUT ================= */
   @media (max-width:760px){
@@ -361,7 +371,7 @@ const sb = configured && window.supabase ? window.supabase.createClient(SUPABASE
 
 const VOTE_AMOUNTS = [5, 10, 20, 25, 30, 40, 50, 75, 100];
 const S = {
-  santa:null, santaItems:[], spinning:false, showMatch:false,
+  santa:null, santaItems:[], spinning:false, showMatch:false, rprefs:null, recovery:false,
   session:null, me:null,
   households:[],          // [{id,name,invite_code,role,display_name}]
   hhId: null,
@@ -375,6 +385,9 @@ const S = {
   authMode:'in', loaded:false,
 };
 const pendingJoin = new URLSearchParams(location.search).get('join');
+// links in reminder emails: secretshopper.online/#cart and /#bonus
+const pendingView = ({'#cart':'cart', '#bonus':'santa'})[location.hash] || null;
+if (pendingView) history.replaceState(null, '', location.pathname + location.search);
 let channel = null, pollTimer = null;
 
 /* ---------- utils ---------- */
@@ -489,6 +502,7 @@ function render(){
   const app = $('#app');
   if (!configured) return app.innerHTML = setupScreen();
   if (!sb) return app.innerHTML = `<div class="center"><div class="card"><h2>Couldn't load Supabase</h2><p class="lede">Check your internet connection and refresh.</p></div></div>`;
+  if (S.recovery) return app.innerHTML = recoveryScreen();
   if (!S.session) return app.innerHTML = authScreen();
   if (!S.loaded) return app.innerHTML = `<div class="center"><div class="spin"></div></div>`;
   if (!S.households.length || S.showOnboard) return app.innerHTML = onboardScreen();
@@ -529,6 +543,19 @@ function authScreen(){
     </form>
     ${!up?`<div style="text-align:center;margin-top:6px"><button class="link-btn" data-act="forgot">Forgot password?</button></div>`:''}
   </div></div>`;
+}
+
+function recoveryScreen(){
+  return `<div class="center"><div class="card">
+    <div class="logo">${ICON.gift}<span class="s1">Secret</span><span class="s2">Shopper</span></div>
+    <p class="lede">Choose a new password for your account.</p>
+    <form id="recoveryform">
+      <label>New password</label><input type="password" name="p1" required minlength="6" autocomplete="new-password">
+      <label>Type it again</label><input type="password" name="p2" required minlength="6" autocomplete="new-password">
+      <div style="height:14px"></div>
+      <button class="btn btn-orange btn-block">Save new password</button>
+      <div class="err" id="recerr"></div>
+    </form></div></div>`;
 }
 
 function onboardScreen(){
@@ -771,6 +798,9 @@ function spinArea(st, allReady, waiting){
           <h2>${safeUrl(it.url)?`<a href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>`:esc(it.title)}</h2>
           ${it.price!=null?priceHtml(it.price):''}${it.notes?`<div class="notes">${esc(it.notes)}</div>`:''}</div></div>`
         : `<p class="muted">The idea picked for you was deleted. Pick anything from their ideas within the limit, or ask an admin to start over.</p>`}
+      <div style="text-align:center;margin-top:14px">${st.mine.purchased
+        ? `<span class="status s-bought" style="display:inline-flex">✓ You've bought this gift</span> <button class="link-btn" data-act="santa-unbought">Undo</button>`
+        : `<button class="btn btn-orange" data-act="santa-bought">✓ Mark as bought</button>`}</div>
       <div class="match-foot">🤫 Only you can see this. ${st.spun} of ${st.participants} have spun. <button class="link-btn" data-act="santa-hide">Hide</button></div>
     </div>`;
   }
@@ -979,7 +1009,67 @@ function restoreForms(snap){
 }
 
 /* ---------- settings modal ---------- */
-function openSettings(focusInvite){
+const FREQS = {
+  weekly:    ['Weekly', 'Once a week'],
+  every3:    ['Every 3 days', 'Every few days'],
+  daily:     ['Daily', 'Every morning'],
+  countdown: ['Christmas countdown', 'Weekly, then every 3 days from Dec 10, then daily Dec 18–24'],
+};
+const AGES = { 0:'right away', 1:'after 1 day', 2:'after 2 days', 3:'after 3 days', 7:'after a week' };
+async function loadReminderPrefs(){
+  const { data, error } = await sb.from('reminder_prefs').select('*').eq('user_id', S.me).maybeSingle();
+  S.rprefs = error ? { error: /reminder_prefs|schema cache|does not exist/i.test(error.message||'') ? 'Reminders need a one-time database update.' : friendly(error) } : data;
+}
+async function saveReminderPrefs(row){
+  row = { ...row, updated_at: new Date().toISOString() };
+  const q = S.rprefs?.user_id ? sb.from('reminder_prefs').update(row).eq('user_id', S.me)
+                              : sb.from('reminder_prefs').insert({ user_id:S.me, ...row });
+  const { error } = await q; if (error) throw error;
+  await loadReminderPrefs();
+}
+function reminderSection(){
+  const r = S.rprefs;
+  if (r?.error) return `<p class="muted" style="margin:0">${esc(r.error)}</p>`;
+  const on = !!r?.enabled;
+  const summary = on ? `${FREQS[r.frequency]?.[0] || 'Weekly'} · for gifts claimed ${AGES[r.min_age_days] || `after ${r.min_age_days} days`}${r.include_santa?' · includes your Secret Santa gift':''}` : 'Off';
+  return `<label class="switch-row"><span><b>Email me about gifts I've claimed but not bought</b><br><small>${esc(summary)}</small></span>
+      <input type="checkbox" class="switch" id="remind-toggle" ${on?'checked':''}></label>
+    ${on?`<div class="inline" style="margin-top:10px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-act="remind-edit">Change choices</button><button class="btn btn-ghost btn-sm" data-act="remind-test">Send me a test email</button></div>`:''}
+    <div class="muted" id="remind-msg"></div>`;
+}
+// the choices prompt, shown when you switch reminders on (or click "Change choices")
+function askReminderChoices(cur){
+  cur = cur || {};
+  const freq = cur.frequency || 'weekly', age = cur.min_age_days ?? 2, santa = cur.include_santa ?? true;
+  return new Promise(res=>{
+    const root = document.createElement('div');
+    root.className = 'modal-bg'; root.style.zIndex = 70;
+    root.innerHTML = `<div class="modal" style="max-width:460px"><header><h3>Email reminders</h3></header>
+      <form class="remind-form">
+      <section><h4>How often?</h4>
+        ${Object.entries(FREQS).map(([k,[t,d]])=>`<label class="radio"><input type="radio" name="freq" value="${k}" ${k===freq?'checked':''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}
+      </section>
+      <section><h4>Remind me about a claimed gift…</h4>
+        <select name="age">${Object.entries(AGES).map(([k,t])=>`<option value="${k}" ${Number(k)===Number(age)?'selected':''}>${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select>
+        <p class="muted">Gives you time to buy it before the first nudge.</p>
+      </section>
+      <section><label class="check" style="margin:0"><input type="checkbox" name="santa" ${santa?'checked':''}> Include my Secret Santa gift</label>
+        <p class="muted">Only after you've spun the randomizer and been given someone, and only until you mark it bought.</p></section>
+      <section style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-ghost" data-r="0">Cancel</button><button class="btn btn-orange">${cur.enabled?'Save':'Turn on reminders'}</button></section>
+      </form></div>`;
+    const finish = v => { root.remove(); res(v); };
+    root.addEventListener('click', e=>{ if (e.target===root || e.target.closest('[data-r="0"]')){ e.stopPropagation(); finish(null); } });
+    root.querySelector('form').addEventListener('submit', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const f = e.target;
+      finish({ frequency: f.freq.value, min_age_days: Number(f.age.value), include_santa: f.santa.checked });
+    });
+    document.body.appendChild(root);
+  });
+}
+
+async function openSettings(focusInvite){
+  if (!S.rprefs || S.rprefs.error) await loadReminderPrefs();
   const h = hh(), me = myMember(), admin = me?.role==='admin';
   const link = location.origin + location.pathname + '?join=' + h.invite_code;
   $('#modal-root').innerHTML = `<div class="modal-bg" data-act="closemodal"><div class="modal">
@@ -991,6 +1081,7 @@ function openSettings(focusInvite){
       <p style="margin:8px 0 0;font-size:13px;color:var(--muted)">Or share the code: <span class="code" style="font-size:15px;letter-spacing:.15em;color:var(--amber)">${esc(h.invite_code)}</span>
       ${admin?` &nbsp;<button class="link-btn" data-act="resetcode">Make a new code</button>`:''}</p>
     </section>
+    <section id="remind-sec"><h4>Email reminders</h4>${reminderSection()}</section>
     <section><h4>Your name in this household</h4>
       <form class="inline" id="nameform"><input type="text" name="n" maxlength="40" required value="${esc(me?.display_name)}"><button class="btn btn-purple">Save</button></form>
     </section>
@@ -1038,7 +1129,7 @@ document.addEventListener('click', e => {
         const email = $('#authform [name=email]').value.trim();
         if (!email) { $('#autherr').textContent='Type your email above first.'; break; }
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin+location.pathname });
-        if (error) throw error; $('#autherr').className='ok'; $('#autherr').textContent='Check your email for a reset link.'; break;
+        if (error) throw error; $('#autherr').className='ok'; $('#autherr').textContent='Check your email for a link to choose a new password. It can take a minute, and may land in spam.'; break;
       }
       case 'signout': closeModal(); await sb.auth.signOut(); break;
       case 'view': S.view=v; S.q=''; S.filter='all'; S.addOpen=false; S.editing=null; S.showMatch=false; render(); window.scrollTo({top:0});
@@ -1060,6 +1151,25 @@ document.addEventListener('click', e => {
       case 'santa-spin': await doSpin(); break;
       case 'santa-show': S.showMatch=true; render(); break;
       case 'santa-hide': S.showMatch=false; render(); break;
+      case 'santa-bought': case 'santa-unbought': {
+        const { error } = await sb.rpc('santa_mark_bought', { hh:S.hhId, p_bought: a==='santa-bought' }); if (error) throw error;
+        await loadSanta(); render(); toast(a==='santa-bought' ? '🎅 Nice! Marked as bought.' : 'Marked as not bought yet'); break;
+      }
+      case 'remind-edit': {
+        const choice = await askReminderChoices(S.rprefs); if (!choice) break;
+        await saveReminderPrefs({ ...choice, enabled:true });
+        $('#remind-sec').innerHTML = '<h4>Email reminders</h4>' + reminderSection(); toast('Saved'); break;
+      }
+      case 'remind-test': {
+        el.disabled = true; const msg = $('#remind-msg'); if (msg) msg.textContent = 'Sending…';
+        const { data, error } = await sb.functions.invoke('send-reminders', { body:{ test:true } });
+        let err = null;
+        if (error) { try { err = (await error.context.json()).error; } catch { /* no details */ } err = err || "Couldn't send right now."; }
+        else if (!data?.ok) err = data?.error || "Couldn't send right now.";
+        el.disabled = false;
+        if (msg) msg.textContent = err ? err : `Sent to ${data.email}. It can take a minute, and may land in spam the first time.`;
+        break;
+      }
       case 'santa-reset': {
         if (!await ask("Start Secret Santa over? This clears everyone's votes, Secret Santa ideas and matches. Regular wish lists aren't touched.", 'Start over')) break;
         const { error } = await sb.rpc('santa_reset', { hh:S.hhId }); if (error) throw error;
@@ -1125,6 +1235,19 @@ document.addEventListener('change', e => {
     run(()=>switchHousehold(v));
   }
   if (e.target.id==='sortsel'){ S.sort=e.target.value; render(); }
+  if (e.target.id==='remind-toggle') run(async()=>{
+    const box = e.target;
+    if (box.checked){
+      const choice = await askReminderChoices(S.rprefs);
+      if (!choice){ box.checked = false; return; }
+      await saveReminderPrefs({ ...choice, enabled:true });
+      toast('Reminders on. Check your inbox for the next one.');
+    } else {
+      await saveReminderPrefs({ enabled:false });
+      toast('Reminders off');
+    }
+    $('#remind-sec').innerHTML = '<h4>Email reminders</h4>' + reminderSection();
+  });
 });
 
 document.addEventListener('input', e => {
@@ -1217,6 +1340,15 @@ document.addEventListener('submit', e => {
     S.skipDraft = true; await loadSanta(); render(); toast(`Voted $${amt}`);
   })();
 
+  if (f.id==='recoveryform') return (async()=>{
+    const p1 = fd.get('p1'), p2 = fd.get('p2');
+    if (p1 !== p2){ done(); return $('#recerr').textContent = "Those don't match. Try again."; }
+    const { error } = await sb.auth.updateUser({ password:p1 }); done();
+    if (error) return $('#recerr').textContent = friendly(error);
+    S.recovery = false; history.replaceState(null, '', location.pathname);
+    render(); toast('Password updated. You\'re signed in!');
+  })();
+
   if (f.id==='nameform') return (async()=>{
     const { error } = await sb.from('members').update({ display_name: fd.get('n').trim() }).eq('household_id',S.hhId).eq('user_id',S.me); done();
     if (error) return toast(friendly(error));
@@ -1244,6 +1376,7 @@ async function onSession(session){
     await loadHouseholds();
     if (pendingJoin && !S.households.some(h=>h.invite_code===pendingJoin.toUpperCase())) S.showOnboard = true;
     if (S.hhId){ await loadHousehold(); subscribe(); }
+    if (pendingView && S.hhId && !S._usedPendingView){ S.view = pendingView; S.showMatch = pendingView==='santa'; S._usedPendingView = true; }
   } catch(e){ console.error(e); toast(friendly(e)); }
   S.loaded=true; render();
 }
@@ -1251,9 +1384,7 @@ async function onSession(session){
 (async()=>{
   if (!sb) return render();
   sb.auth.onAuthStateChange((evt, session) => {
-    if (evt==='PASSWORD_RECOVERY'){
-      setTimeout(async()=>{ const p = prompt('Choose a new password (6+ characters):'); if (p){ const {error}=await sb.auth.updateUser({password:p}); toast(error?friendly(error):'Password updated'); } },0);
-    }
+    if (evt==='PASSWORD_RECOVERY'){ S.recovery = true; setTimeout(render, 0); }
     setTimeout(()=>onSession(session),0);
   });
   const { data } = await sb.auth.getSession();
